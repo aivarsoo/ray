@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [project]
-name = "rllib_redq"
+name = "rllib_ppo_lagrange"
 authors = [{name = "Anyscale Inc."}]
 version = "0.1.0"
 description = ""
