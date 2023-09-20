@@ -150,10 +150,7 @@ class PendulumEnv(Env):
         self.do_simulation(action)
         next_obs = self._get_obs()
         reward = self._reward_fn(obs, action, next_obs, is_tensor=False)
-        if self.t >= self.max_ep_len:
-            done = True
-        else:
-            done = self._termination_fn(obs, action, next_obs, is_tensor=False)
+        done  = self.t >= self.max_ep_len or self._termination_fn(obs, action, next_obs, is_tensor=False)
         info = dict()
         return next_obs, reward, done, False, info
 
