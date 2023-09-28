@@ -8,23 +8,19 @@ See `ppo_[tf|torch]_policy.py` for the definition of the policy loss.
 
 Detailed documentation: https://docs.ray.io/en/master/rllib-algorithms.html#ppo
 """
+from collections import deque
 import dataclasses
 import logging
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Type
-from typing import TYPE_CHECKING
-from typing import Union
+from typing import (
+    Dict,
+    Optional,
+    Type,
+    TYPE_CHECKING,
+    Union
+)
 
 import numpy as np
-from ppo_lagrange.ppo_catalog import PPOLagrangeCatalog
-from ppo_lagrange.ppo_learner import D_PART
-from ppo_lagrange.ppo_learner import I_PART
-from ppo_lagrange.ppo_learner import MEAN_CONSTRAINT_VIOL
-from ppo_lagrange.ppo_learner import P_PART
-from ppo_lagrange.ppo_learner import PPOLagrangeLearnerHyperparameters
-from ppo_lagrange.utils import substract_average
+
 from ray.rllib.algorithms.algorithm_config import AlgorithmConfig
 from ray.rllib.algorithms.algorithm_config import NotProvided
 from ray.rllib.algorithms.ppo.ppo import PPO
@@ -38,20 +34,25 @@ from ray.rllib.execution.train_ops import train_one_step
 from ray.rllib.policy.policy import Policy
 from ray.rllib.utils.annotations import ExperimentalAPI
 from ray.rllib.utils.annotations import override
-from ray.rllib.utils.deprecation import DEPRECATED_VALUE
-from ray.rllib.utils.deprecation import deprecation_warning
 from ray.rllib.utils.metrics import ALL_MODULES
 from ray.rllib.utils.metrics import NUM_AGENT_STEPS_SAMPLED
 from ray.rllib.utils.metrics import NUM_ENV_STEPS_SAMPLED
 from ray.rllib.utils.metrics import SAMPLE_TIMER
 from ray.rllib.utils.metrics import SYNCH_WORKER_WEIGHTS_TIMER
 from ray.rllib.utils.metrics.learner_info import LEARNER_STATS_KEY
-from ray.rllib.utils.schedules.scheduler import Scheduler
 from ray.rllib.utils.typing import ResultDict
 from ray.util.debug import log_once
-# from ray.rllib.algorithms.algorithm import Algorithm
-# from ray.rllib.algorithms.pg import PGConfig
-# from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
+
+from ppo_lagrange.callbacks import ComputeEpisodeCostCallback
+from ppo_lagrange.ppo_catalog import PPOLagrangeCatalog
+from ppo_lagrange.ppo_learner import (
+    P_PART, 
+    I_PART, 
+    D_PART, 
+    MEAN_CONSTRAINT_VIOL, 
+    PPOLagrangeLearnerHyperparameters
+    )
+from ppo_lagrange.utils import substract_average
 
 if TYPE_CHECKING:
     from ray.rllib.core.learner.learner import Learner
@@ -61,11 +62,11 @@ logger = logging.getLogger(__name__)
 
 
 class PPOLagrangeConfig(PPOConfig):
-    """Defines a configuration class from which a PPO Algorithm can be built.
+    """Defines a configuration class from which a PPO Lagrange Algorithm can be built.
 
     Example:
-        >>> from ray.rllib.algorithms.ppo import PPOConfig
-        >>> config = PPOConfig()  # doctest: +SKIP
+        >>> from ppo_lagrange import PPOLagrangeConfig
+        >>> config = PPOLagrangeConfig()  # doctest: +SKIP
         >>> config = config.training(gamma=0.9, lr=0.01, kl_coeff=0.3)  # doctest: +SKIP
         >>> config = config.resources(num_gpus=0)  # doctest: +SKIP
         >>> config = config.rollouts(num_rollout_workers=4)  # doctest: +SKIP
@@ -75,10 +76,10 @@ class PPOLagrangeConfig(PPOConfig):
         >>> algo.train()  # doctest: +SKIP
 
     Example:
-        >>> from ray.rllib.algorithms.ppo import PPOConfig
+        >>> from ppo_lagrange import PPOLagrangeConfig
         >>> from ray import air
         >>> from ray import tune
-        >>> config = PPOConfig()
+        >>> config = PPOLagrangeConfig()
         >>> # Print out some default values.
         >>> print(config.clip_param)  # doctest: +SKIP
         >>> # Update the config object.
@@ -90,7 +91,7 @@ class PPOLagrangeConfig(PPOConfig):
         >>> # Use to_dict() to get the old-style python config dict
         >>> # when running with tune.
         >>> tune.Tuner(  # doctest: +SKIP
-        ...     "PPO",
+        ...     "PPOLagrange",
         ...     run_config=air.RunConfig(stop={"episode_reward_mean": 200}),
         ...     param_space=config.to_dict(),
         ... ).fit()
@@ -102,32 +103,25 @@ class PPOLagrangeConfig(PPOConfig):
 
         self.use_cost_critic = True
         self.use_cost_gae = True
-        self.cvf_clip_param = 10.0
+        self.cvf_clip_param = 100.0
         self.cvf_loss_coeff = 1.0
         self.cost_lambda_ = 1.0
         self.cost_gamma = 1.0
         self.cost_limit = 25.0
-        self.init_penalty_coeff = 0.0
+        self.init_penalty_coeff = 0.05
         self.penalty_coeff_config = {
             'learn_penalty_coeff': False,
-            # 'penalty_coeff_lr': 1,
+            'penalty_coeff_lr': 1e-2,
             'pid_coeff': {P_PART: 0.0, I_PART: 1.0, D_PART: 0.0},
-            'pid_polyak_coeff': {P_PART: 0.05, I_PART: 1.0, D_PART: 0.05},
+            'polyak_coeff': 0.1,
             'max_penalty_coeff': 100}
+
+        self.callbacks_class = ComputeEpisodeCostCallback
+        self.keep_per_episode_custom_metrics = True
 
     @override(PPOConfig)
     def get_default_rl_module_spec(self) -> SingleAgentRLModuleSpec:
         if self.framework_str == "torch":
-            # from ray.rllib.algorithms.ppo.torch.ppo_torch_rl_module import (
-            #     PPOTorchRLModule,
-            # )
-            # from ppo.torch.ppo_torch_rl_module import (
-            #     PPOTorchRLModule,
-            # )
-
-            # return SingleAgentRLModuleSpec(
-            #     module_class=PPOTorchRLModule, catalog_class=PPOCatalog
-            # )
             from ppo_lagrange.torch.ppo_torch_rl_module import (
                 PPOLagrangeTorchRLModule,
             )
@@ -135,39 +129,25 @@ class PPOLagrangeConfig(PPOConfig):
             return SingleAgentRLModuleSpec(
                 module_class=PPOLagrangeTorchRLModule, catalog_class=PPOLagrangeCatalog
             )
-        elif self.framework_str == "tf2":
-            # from ray.rllib.algorithms.ppo.tf.ppo_tf_rl_module import PPOTfRLModule
-            from ppo_lagrange.tf.ppo_tf_rl_module import PPOTfRLModule
-
-            return SingleAgentRLModuleSpec(
-                module_class=PPOTfRLModule, catalog_class=PPOLagrangeCatalog
-            )
         else:
             raise ValueError(
                 f"The framework {self.framework_str} is not supported. "
-                "Use either 'torch' or 'tf2'."
+                "Use 'torch'"
             )
 
     @override(PPOConfig)
     def get_default_learner_class(self) -> Union[Type["Learner"], str]:
         if self.framework_str == "torch":
-            # from ray.rllib.algorithms.ppo.torch.ppo_torch_learner import (
-            #     PPOTorchLearner,
-            # )
             from ppo_lagrange.torch.ppo_torch_learner import (
                 PPOLagrangeTorchLearner,
             )
 
             return PPOLagrangeTorchLearner
-        elif self.framework_str == "tf2":
-            # from ray.rllib.algorithms.ppo.tf.ppo_tf_learner import PPOTfLearner
-            from ppo_lagrange.tf.ppo_tf_learner import PPOTfLearner
 
-            return PPOTfLearner
         else:
             raise ValueError(
                 f"The framework {self.framework_str} is not supported. "
-                "Use either 'torch' or 'tf2'."
+                "Use 'torch'."
             )
 
     @override(PPOConfig)
@@ -180,9 +160,11 @@ class PPOLagrangeConfig(PPOConfig):
             cost_limit=self.cost_limit,
             penalty_coeff_config=self.penalty_coeff_config,
             penalty_coefficient=self.init_penalty_coeff,
-            p_penalty_coefficient=self.init_penalty_coeff,
-            i_penalty_coefficient=self.init_penalty_coeff,
-            d_penalty_coefficient=self.init_penalty_coeff,
+            smoothed_violation=0.0,
+            i_part=self.init_penalty_coeff,
+            # p_penalty_coefficient=self.init_penalty_coeff + 0.0,
+            # i_penalty_coefficient=self.init_penalty_coeff + 0.0,
+            # d_penalty_coefficient=self.init_penalty_coeff + 0.0,
             **dataclasses.asdict(base_hps),
         )
 
@@ -247,62 +229,24 @@ class PPOLagrangeConfig(PPOConfig):
             self.penalty_coeff_config = penalty_coeff_config
         return self
 
-    # @override(PPOConfig)
-    # def validate(self) -> None:
-    #     # Can not use Tf with learner api.
-    #     if self.framework_str == "tf":
-    #         self.rl_module(_enable_rl_module_api=False)
-    #         self.training(_enable_learner_api=False)
+    @override(PPOConfig)
+    def validate(self) -> None:
+        # Call super's validation method.
+        super().validate()
+                
+              
+        assert self.penalty_coeff_config['penalty_coeff_lr'] > 0, "Learning rate must be positive"
+        assert 1.0 >= self.penalty_coeff_config['polyak_coeff'] > 0, "Polyak coefficient must be between zero and one"
+        assert self.penalty_coeff_config['max_penalty_coeff'] > 0, "Maximum penalty coefficient must be positive"
 
-    #     # Call super's validation method.
-    #     super().validate()
-
-    #     # # SGD minibatch size must be smaller than train_batch_size (b/c
-    #     # # we subsample a batch of `sgd_minibatch_size` from the train-batch for
-    #     # # each `num_sgd_iter`).
-    #     # # Note: Only check this if `train_batch_size` > 0 (DDPPO sets this
-    #     # # to -1 to auto-calculate the actual batch size later).
-    #     # if self.sgd_minibatch_size > self.train_batch_size:
-    #     #     raise ValueError(
-    #     #         f"`sgd_minibatch_size` ({self.sgd_minibatch_size}) must be <= "
-    #     #         f"`train_batch_size` ({self.train_batch_size}). In PPO, the train batch"
-    #     #         f" is be split into {self.sgd_minibatch_size} chunks, each of which is "
-    #     #         f"iterated over (used for updating the policy) {self.num_sgd_iter} "
-    #     #         "times."
-    #     #     )
-
-    #     # # Episodes may only be truncated (and passed into PPO's
-    #     # # `postprocessing_fn`), iff generalized advantage estimation is used
-    #     # # (value function estimate at end of truncated episode to estimate
-    #     # # remaining value).
-    #     # if (
-    #     #     not self.in_evaluation
-    #     #     and self.batch_mode == "truncate_episodes"
-    #     #     and not self.use_gae
-    #     # ):
-    #     #     raise ValueError(
-    #     #         "Episode truncation is not supported without a value "
-    #     #         "function (to estimate the return at the end of the truncated"
-    #     #         " trajectory). Consider setting "
-    #     #         "batch_mode=complete_episodes."
-    #     #     )
-
-    #     # # Entropy coeff schedule checking.
-    #     # if self._enable_learner_api:
-    #     #     if self.entropy_coeff_schedule is not None:
-    #     #         raise ValueError(
-    #     #             "`entropy_coeff_schedule` is deprecated and must be None! Use the "
-    #     #             "`entropy_coeff` setting to setup a schedule."
-    #     #         )
-    #     #     Scheduler.validate(
-    #     #         fixed_value_or_schedule=self.entropy_coeff,
-    #     #         setting_name="entropy_coeff",
-    #     #         description="entropy coefficient",
-    #     #     )
-    #     # if isinstance(self.entropy_coeff, float) and self.entropy_coeff < 0.0:
-    #     #     raise ValueError("`entropy_coeff` must be >= 0.0")
+        for value in self.penalty_coeff_config['pid_coeff'].values():
+            assert value >= 0, "PID coefficients must be nonnegative"
+        
+        assert self.penalty_coeff_config['pid_coeff'][I_PART] > 0, "Integral gain coefficients must be positive"
 
 
+            
+        
 class PPOLagrange(PPO):
     @classmethod
     @override(PPO)
@@ -319,16 +263,11 @@ class PPOLagrange(PPO):
             from ppo_lagrange.ppo_torch_policy import PPOLagrangeTorchPolicy
             return PPOLagrangeTorchPolicy
 
-        elif config["framework"] == "tf":
-            # from ray.rllib.algorithms.ppo.ppo_tf_policy import PPOTF1Policy
-            from ppo_lagrange.ppo_tf_policy import PPOTF1Policy
-
-            return PPOTF1Policy
         else:
-            # from ray.rllib.algorithms.ppo.ppo_tf_policy import PPOTF2Policy
-            from ppo_lagrange.ppo_tf_policy import PPOTF2Policy
-
-            return PPOTF2Policy
+            raise ValueError(
+                f"The framework {config['framework']} is not supported. "
+                "Use 'torch'"
+            )
 
     @ExperimentalAPI
     def training_step(self) -> ResultDict:
@@ -429,14 +368,9 @@ class PPOLagrange(PPO):
             lp_dict = {}
             if self.config.penalty_coeff_config['learn_penalty_coeff']:
                 for pid in policies_to_update:
-                    # p_penalty = train_results[pid][P_PENALTY]
-                    # i_penalty = train_results[pid][I_PENALTY]
-                    # d_penalty = train_results[pid][D_PENALTY]
                     cost_error = train_results[pid][MEAN_CONSTRAINT_VIOL]
                     lp_dict[pid] = cost_error
                     if np.isnan(cost_error):
-                        # lp_dict[pid] = {P_PENALTY: p_penalty, I_PENALTY: i_penalty, D_PENALTY: d_penalty, COST_ERROR: cost_error}
-                        # if np.isnan(p_penalty) or np.isnan(i_penalty) or np.isnan(d_penalty) or np.isnan(cost_error):
                         logger.warning(
                             f"Largrangian coefficient for Module {pid} is non-finite"
                             # "likely destabilize your model and the training process. "

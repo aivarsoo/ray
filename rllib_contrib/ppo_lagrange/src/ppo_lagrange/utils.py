@@ -15,6 +15,7 @@ from ray.rllib.utils.annotations import override
 from ray.rllib.utils.deprecation import Deprecated
 from ray.rllib.utils.schedules import PiecewiseSchedule
 from ray.rllib.utils.typing import SampleBatchType
+from ray.rllib.utils.typing import AlgorithmConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -130,3 +131,17 @@ def substract_average(samples: SampleBatchType, fields: List[str]) -> SampleBatc
         samples = samples.policy_batches[DEFAULT_POLICY_ID]
 
     return samples
+
+
+def validate_config(config: AlgorithmConfigDict) -> None:
+    """Executed before Policy is "initialized" (at beginning of constructor).
+    Args:
+        config: The Policy's config.
+    """
+    # If vf_share_layers is True, inform about the need to tune vf_loss_coeff.
+    if config.get("model", {}).get("vf_share_layers") is True:
+        logger.info(
+            "`vf_share_layers=True` in your model. "
+            "Therefore, remember to tune the value of `vf_loss_coeff`!"
+        )
+

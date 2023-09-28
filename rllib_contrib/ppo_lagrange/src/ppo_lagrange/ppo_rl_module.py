@@ -1,5 +1,5 @@
 """
-This file holds framework-agnostic components for PPO's RLModules.
+This file holds framework-agnostic components for PPO Lagrange's RLModules.
 """
 from ray.rllib.algorithms.ppo.ppo_rl_module import PPORLModule
 from ray.rllib.utils.annotations import ExperimentalAPI

@@ -9,7 +9,7 @@ from ppo_lagrange.cost_postprocessing import compute_gae_for_sample_batch
 from ppo_lagrange.cost_postprocessing import CostValuePostprocessing
 from ppo_lagrange.cost_postprocessing import Postprocessing
 from ppo_lagrange.cost_postprocessing import RewardValuePostprocessing
-from ppo_lagrange.ppo_tf_policy import validate_config
+from ppo_lagrange.utils import validate_config
 from ppo_lagrange.utils import CostAndValueNetworkMixins
 from ray.rllib.models.action_dist import ActionDistribution
 from ray.rllib.models.modelv2 import ModelV2

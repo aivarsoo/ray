@@ -149,7 +149,7 @@ class PendulumEnv(Env):
         # bug fix do simulations with numpy actions not torch
         self.do_simulation(action)
         next_obs = self._get_obs()
-        reward = self._reward_fn(obs, action, next_obs, is_tensor=False)
+        reward = self._reward_fn(obs, action, next_obs, is_tensor=False)# / float(self.max_ep_len)
         done  = self.t >= self.max_ep_len or self._termination_fn(obs, action, next_obs, is_tensor=False)
         info = dict()
         return next_obs, reward, done, False, info

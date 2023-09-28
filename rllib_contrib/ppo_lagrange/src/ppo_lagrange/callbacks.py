@@ -7,7 +7,6 @@ from ray.rllib.env import BaseEnv
 from ray.rllib.evaluation import RolloutWorker
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
 from ray.rllib.policy import Policy
-from ray.rllib.policy.sample_batch import SampleBatch
 
 
 class ComputeEpisodeCostCallback(DefaultCallbacks):
@@ -47,7 +46,6 @@ class ComputeEpisodeCostCallback(DefaultCallbacks):
             "after env reset!"
         )
         costs = []
-        # TODO understand if that's a good way of doing it
         for agent in episode.get_agents():
             costs.append(episode._last_infos[agent]['cost'])
         episode.user_data["costs"].append(np.mean(costs))
@@ -62,17 +60,8 @@ class ComputeEpisodeCostCallback(DefaultCallbacks):
         env_index: int,
         **kwargs
     ):
-        # Check if there are multiple episodes in a batch, i.e.
-        # "batch_mode": "truncate_episodes".
-        # if worker.config.batch_mode == "truncate_episodes":
-        # # Make sure this episode is really done.
-        # assert episode.batch_builder.policy_collectors["default_policy"].batches[
-        #     -1
-        # ]["dones"][-1], (
-        #     "ERROR: `on_episode_end()` should only be called "
-        #     "after episode is done!"
-        # )
-        episode.custom_metrics["episode_cost"] = np.sum(episode.user_data["costs"])
+        episode_cost = np.sum(episode.user_data["costs"])
+        episode.custom_metrics["episode_cost"] = episode_cost
         episode.hist_data["costs"] = episode.user_data["costs"]
 
     def on_train_result(self, *, algorithm, result: dict, **kwargs):

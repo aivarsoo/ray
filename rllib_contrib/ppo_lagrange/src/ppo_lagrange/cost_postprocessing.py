@@ -28,6 +28,7 @@ class RewardValuePostprocessing(Postprocessing):
     VF_PREDS = SampleBatch.VF_PREDS
     VALUES_BOOTSTRAPPED = SampleBatch.VALUES_BOOTSTRAPPED
     VF_LOSS_KEY = VF_LOSS_KEY
+    RETURNS = "accumulated_rewards"
     LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY = LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY
     LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY = LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY
 
@@ -39,6 +40,7 @@ class CostValuePostprocessing(Postprocessing):
     VF_PREDS = "cvf_preds"
     VALUES_BOOTSTRAPPED = "cost_values_bootstrapped"
     VF_LOSS_KEY = "cost_" + VF_LOSS_KEY
+    RETURNS = "accumulated_costs"
     LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY = "cost_" + LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY
     LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY = "cost_" + LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY
 
@@ -65,6 +67,8 @@ def compute_advantages(
         use_gae: Using Generalized Advantage Estimation.
         use_critic: Whether to use critic (value estimates). Setting
             this to False will use 0 as baseline.
+        post_process: Postprocessing class can be Reward or Cost
+            postprocessing
         rewards: Override the reward values in rollout.
         vf_preds: Override the value function predictions in rollout.
 
@@ -82,6 +86,13 @@ def compute_advantages(
     if vf_preds is None and use_critic:
         vf_preds = rollout[post_process.VF_PREDS]
 
+    # computing accumulated returns 
+    rewards_plus_v = np.concatenate([rewards, np.array([last_r])])
+    accumulated_returns = discount_cumsum(rewards_plus_v, 1.0)[:-1].astype(
+        np.float32
+    )
+    rollout[post_process.RETURNS] = np.array([accumulated_returns[0]])
+
     if use_gae:
         vpred_t = np.concatenate([vf_preds, np.array([last_r])])
         delta_t = rewards + gamma * vpred_t[1:] - vpred_t[:-1]
@@ -92,11 +103,9 @@ def compute_advantages(
             rollout[post_process.ADVANTAGES] + vf_preds
         ).astype(np.float32)
     else:
-        rewards_plus_v = np.concatenate([rewards, np.array([last_r])])
         discounted_returns = discount_cumsum(rewards_plus_v, gamma)[:-1].astype(
             np.float32
         )
-
         if use_critic:
             rollout[post_process.ADVANTAGES] = discounted_returns - vf_preds
             rollout[post_process.VALUE_TARGETS] = discounted_returns

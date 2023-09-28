@@ -1,5 +1,6 @@
+from collections import deque
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Callable
 
 from ray.rllib.algorithms.ppo.ppo_learner import PPOLearner
 from ray.rllib.algorithms.ppo.ppo_learner import PPOLearnerHyperparameters
@@ -21,7 +22,7 @@ PENALTY = "penalty_coefficient"
 P_PART = "P"
 I_PART = "I"
 D_PART = "D"
-
+SMOOTHED_VIOLATION = "smoothed_violation"
 
 @dataclass
 class PPOLagrangeLearnerHyperparameters(PPOLearnerHyperparameters):
@@ -39,9 +40,8 @@ class PPOLagrangeLearnerHyperparameters(PPOLearnerHyperparameters):
     cost_limit: float = None
     penalty_coeff_config: Dict = None
     penalty_coefficient: float = None
-    p_penalty_coefficient: float = None
-    i_penalty_coefficient: float = None
-    d_penalty_coefficient: float = None
+    smoothed_violation: float = None
+    i_part: float = None
 
 
 class PPOLagrangeLearner(PPOLearner):
@@ -57,15 +57,12 @@ class PPOLagrangeLearner(PPOLearner):
                 PENALTY: self._get_tensor_variable(
                     self.hps.get_hps_for_module(module_id).penalty_coefficient
                 ),
-                P_PART: self._get_tensor_variable(
-                    self.hps.get_hps_for_module(module_id).p_penalty_coefficient
+                SMOOTHED_VIOLATION: self._get_tensor_variable(
+                    self.hps.get_hps_for_module(module_id).smoothed_violation
                 ),
                 I_PART: self._get_tensor_variable(
-                    self.hps.get_hps_for_module(module_id).i_penalty_coefficient
-                ),
-                D_PART: self._get_tensor_variable(
-                    self.hps.get_hps_for_module(module_id).d_penalty_coefficient
-                ),
+                    self.hps.get_hps_for_module(module_id).i_part
+                )
             }
         )
 

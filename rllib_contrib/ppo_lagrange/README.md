@@ -67,3 +67,4 @@ pip install -e '.[development]'
 1. implement the postprocessing method and test if it works
 1. install safety gym
 1. update safety config partially
+1. Refactor to make it nice
