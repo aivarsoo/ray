@@ -44,6 +44,7 @@ from ray.rllib.utils.typing import ResultDict
 from ray.util.debug import log_once
 
 from ppo_lagrange.callbacks import ComputeEpisodeCostCallback
+from ppo_lagrange.cost_postprocessing import CostValuePostprocessing
 from ppo_lagrange.ppo_catalog import PPOLagrangeCatalog
 from ppo_lagrange.ppo_learner import (
     P_PART, 
@@ -105,6 +106,8 @@ class PPOLagrangeConfig(PPOConfig):
         self.use_cost_gae = True
         self.cvf_clip_param = 100.0
         self.cvf_loss_coeff = 1.0
+        self.cost_advant_std = False
+        self.clip_cost_cvf = False
         self.cost_lambda_ = 1.0
         self.cost_gamma = 1.0
         self.cost_limit = 25.0
@@ -112,7 +115,7 @@ class PPOLagrangeConfig(PPOConfig):
         self.penalty_coeff_config = {
             'learn_penalty_coeff': False,
             'penalty_coeff_lr': 1e-2,
-            'pid_coeff': {P_PART: 0.0, I_PART: 1.0, D_PART: 0.0},
+            'pid_coeff': {P_PART: 0.0, I_PART:1e-2,  D_PART: 0.0},
             'polyak_coeff': 0.1,
             'max_penalty_coeff': 100}
 
@@ -154,6 +157,8 @@ class PPOLagrangeConfig(PPOConfig):
     def get_learner_hyperparameters(self) -> PPOLagrangeLearnerHyperparameters:
         base_hps = super().get_learner_hyperparameters()
         return PPOLagrangeLearnerHyperparameters(
+            cost_advant_std=self.cost_advant_std,
+            clip_cost_cvf=self.clip_cost_cvf,
             use_cost_critic=self.use_cost_critic,
             cvf_loss_coeff=self.cvf_loss_coeff,
             cvf_clip_param=self.cvf_clip_param,
@@ -162,9 +167,6 @@ class PPOLagrangeConfig(PPOConfig):
             penalty_coefficient=self.init_penalty_coeff,
             smoothed_violation=0.0,
             i_part=self.init_penalty_coeff,
-            # p_penalty_coefficient=self.init_penalty_coeff + 0.0,
-            # i_penalty_coefficient=self.init_penalty_coeff + 0.0,
-            # d_penalty_coefficient=self.init_penalty_coeff + 0.0,
             **dataclasses.asdict(base_hps),
         )
 
@@ -172,6 +174,8 @@ class PPOLagrangeConfig(PPOConfig):
     def training(
         self,
         *,
+        cost_advant_std: Optional[bool] = NotProvided,
+        clip_cost_cvf: Optional[bool] = NotProvided,
         use_cost_critic: Optional[bool] = NotProvided,
         use_cost_gae: Optional[bool] = NotProvided,
         cost_lambda_: Optional[float] = NotProvided,
@@ -213,6 +217,10 @@ class PPOLagrangeConfig(PPOConfig):
             # well. Don't forget to remove .use_critic from algorithm config.
         if use_cost_gae is not NotProvided:
             self.use_cost_gae = use_cost_gae
+        if clip_cost_cvf is not NotProvided:
+            self.clip_cost_cvf = clip_cost_cvf
+        if cost_advant_std is not NotProvided:
+            self.cost_advant_std = cost_advant_std
         if cost_lambda_ is not NotProvided:
             self.cost_lambda_ = cost_lambda_
         if cost_gamma is not NotProvided:
@@ -224,7 +232,7 @@ class PPOLagrangeConfig(PPOConfig):
         if cost_limit is not NotProvided:
             self.cost_limit = cost_limit
         if init_penalty_coeff is not NotProvided:
-            self.init_penalty_coeff = init_penalty_coeff
+            self.init_penalty_coeff = float(init_penalty_coeff)
         if penalty_coeff_config is not NotProvided:
             self.penalty_coeff_config = penalty_coeff_config
         return self
@@ -242,7 +250,7 @@ class PPOLagrangeConfig(PPOConfig):
         for value in self.penalty_coeff_config['pid_coeff'].values():
             assert value >= 0, "PID coefficients must be nonnegative"
         
-        assert self.penalty_coeff_config['pid_coeff'][I_PART] > 0, "Integral gain coefficients must be positive"
+        # assert self.penalty_coeff_config['pid_coeff'][I_PART] > 0, "Integral gain coefficients must be positive"
 
 
             
@@ -289,7 +297,11 @@ class PPOLagrange(PPO):
 
         # Standardize advantages
         train_batch = standardize_fields(train_batch, ["advantages"])
-        train_batch = substract_average(train_batch, ["cost_advantages"])
+        if self.config.cost_advant_std:
+            train_batch = standardize_fields(train_batch, ["cost_advantages"])
+        else:
+            train_batch = substract_average(train_batch, ["cost_advantages"])
+        
         # Train
         if self.config._enable_learner_api:
             # TODO (Kourosh) Clearly define what train_batch_size
@@ -368,9 +380,10 @@ class PPOLagrange(PPO):
             lp_dict = {}
             if self.config.penalty_coeff_config['learn_penalty_coeff']:
                 for pid in policies_to_update:
-                    cost_error = train_results[pid][MEAN_CONSTRAINT_VIOL]
-                    lp_dict[pid] = cost_error
-                    if np.isnan(cost_error):
+                    # cost_error = train_results[pid][MEAN_CONSTRAINT_VIOL]
+                    acc_costs = train_batch[pid][CostValuePostprocessing.RETURNS]
+                    lp_dict[pid] = acc_costs
+                    if np.isnan(acc_costs).any():
                         logger.warning(
                             f"Largrangian coefficient for Module {pid} is non-finite"
                             # "likely destabilize your model and the training process. "

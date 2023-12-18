@@ -5,33 +5,43 @@ from ppo_lagrange import PPOLagrange
 
 import ray
 from ray import air, tune
-from ppo_lagrange.callbacks import ComputeEpisodeCostCallback
-# from envs.pendulum import SafePendulumEnv
 import envs.pendulum
 
 if __name__ == "__main__":
 
-    max_concurrent_trials, num_samples, num_gpus = 1, 3, 1
-    ray.init(num_gpus=num_gpus, local_mode=True)
-    stop = {"iterations_since_restore": 200}    
+    max_concurrent_trials, num_samples, num_gpus, num_cpus = 1, 1, 1, 2
+    ray.init(num_cpus=num_cpus,num_gpus=num_gpus, local_mode=True) # num_gpus=num_gpus, 
+    stop = {"iterations_since_restore": 300}    
     params = {
+                "num_workers": num_cpus-1,
                 "framework": "torch",
-                "vf_clip_param": 100.0,
-                "callbacks_class": ComputeEpisodeCostCallback,
-                "keep_per_episode_custom_metrics": True,
-                "observation_filter": "MeanStdFilter",
+                "vf_clip_param": 10000.0,                
                 "enable_connectors": True,
                 "model": {"fcnet_activation": "relu"},
                 "env": "SafePendulum-v0",
                 "gamma": 0.95,
                 # tunable parameters
-                "train_batch_size": 4000,
+                "train_batch_size": 200,
                 "clip_param": 0.2,
-                "sgd_minibatch_size": 4000, #128, #tune.choice([128, 256]),
-                "lr": 1e-4,#tune.choice([1e-4, 3e-4, 1e-3, 3e-3]),
+                "sgd_minibatch_size":20, #128, #tune.choice([128, 256]),
+                "lr": 3e-3,#tune.choice([1e-4, 3e-4, 1e-3, 3e-3]),
                 "lambda": 0.95,#tune.choice([0.95, 0.97]),          
                 "num_sgd_iter": 80,# tune.choice([15, 30]),
-                "seed": tune.choice([42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60]),
+                #### safety parameters
+                "cost_limit": 20.0,
+                "cost_lambda_": 0.95,
+                "cost_gamma": 0.99,
+                "cvf_clip_param": 10000.0,
+                "init_penalty_coeff": 0.5,
+                "penalty_coeff_config": {
+                    'learn_penalty_coeff': True,
+                    'penalty_coeff_lr': 1e-3,
+                    # 'pid_coeff': {"P":  tune.choice([5e-1, 1.0, 5.0]), "I": 1.0, "D": tune.choice([5e-1, 1.0])},
+                    'pid_coeff': {"P":  5.0, "I": 1.0, "D": 0},
+                    'polyak_coeff': 0.1, 
+                    'max_penalty_coeff': 100.0
+                    },
+                "seed": 42,
     }
     tuner = tune.Tuner(
         PPOLagrange,
@@ -46,17 +56,3 @@ if __name__ == "__main__":
         run_config=air.RunConfig(stop=stop),
     )
     results = tuner.fit()
-
-    best_result = results.get_best_result()
-
-    print("\nBest performing trial's final reported metrics:\n")
-
-    metrics_to_print = [
-        "episode_reward_mean",
-        "episode_reward_max",
-        "episode_reward_min",
-        "episode_len_mean",
-    ]
-    pprint.pprint(
-        {k: v for k, v in best_result.metrics.items() if k in metrics_to_print}
-    )

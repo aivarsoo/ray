@@ -125,14 +125,16 @@ class PPOLagrangeTorchPolicy(
         mean_entropy = reduce_mean_valid(curr_entropy)
 
         def update_value_function(current_batch: SampleBatch, post_processing: Postprocessing, use_critic: bool, clip_param: float):
-            surrogate_loss = torch.min(
-                current_batch[post_processing.ADVANTAGES] * logp_ratio,
+            surrogate_objective = current_batch[post_processing.ADVANTAGES] * logp_ratio
+            surrogate_objective = torch.min(
+                surrogate_objective,
                 current_batch[post_processing.ADVANTAGES]
                 * torch.clamp(
                     logp_ratio, 1 -
                     self.config["clip_param"], 1 + self.config["clip_param"]
                 ),
             )
+            surrogate_loss = -surrogate_objective
 
             # Compute a value function loss.
             if use_critic:
@@ -149,24 +151,29 @@ class PPOLagrangeTorchPolicy(
                     0.0).to(surrogate_loss.device)
             return surrogate_loss, vf_loss_clipped, mean_vf_loss, value_fn_out
 
-        surrogate_loss, vf_loss_clipped, mean_vf_loss, value_fn_out = update_value_function(
+        reward_surrogate_loss, vf_loss_clipped, mean_vf_loss, value_fn_out = update_value_function(
             train_batch,
             RewardValuePostprocessing,
             self.config['use_critic'],
-            self.config["vf_clip_param"]
+            self.config["vf_clip_param"],
+            clip_ratio=True
         )
 
         cost_surrogate_loss, cvf_loss_clipped, mean_cvf_loss, cost_value_fn_out = update_value_function(
             train_batch,
-            RewardValuePostprocessing,
+            CostValuePostprocessing,
             self.config['use_critic'],
-            self.config["cvf_clip_param"]
+            self.config["cvf_clip_param"],
+            clip_ratio=self.config["clip_cost_cvf"]
         )
 
-        surrogate_loss -= cost_surrogate_loss
+        # current_lagrange_penalty_coefficients = self.curr_lagrange_penalty_coeffs_per_module[module_id]
+        # current_penalty = torch.nn.functional.softplus(current_lagrange_penalty_coefficients[PENALTY])
+
+        surrogate_loss = reward_surrogate_loss - cost_surrogate_loss
 
         total_loss = reduce_mean_valid(
-            - surrogate_loss
+            surrogate_loss
             + self.config["vf_loss_coeff"] * vf_loss_clipped
             + self.config["cvf_loss_coeff"] * cvf_loss_clipped
             - self.entropy_coeff * curr_entropy
@@ -245,3 +252,4 @@ class PPOLagrangeTorchPolicy(
             return compute_gae_for_sample_batch(
                 self, sample_batch, other_agent_batches, episode
             )
+

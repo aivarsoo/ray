@@ -29,6 +29,7 @@ class RewardValuePostprocessing(Postprocessing):
     VALUES_BOOTSTRAPPED = SampleBatch.VALUES_BOOTSTRAPPED
     VF_LOSS_KEY = VF_LOSS_KEY
     RETURNS = "accumulated_rewards"
+    FINAL_STATE = "final_state"
     LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY = LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY
     LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY = LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY
 
@@ -91,7 +92,7 @@ def compute_advantages(
     accumulated_returns = discount_cumsum(rewards_plus_v, 1.0)[:-1].astype(
         np.float32
     )
-    rollout[post_process.RETURNS] = np.array([accumulated_returns[0]])
+    rollout[post_process.RETURNS] = accumulated_returns[0] * np.ones_like(rewards) # needed for RNN
 
     if use_gae:
         vpred_t = np.concatenate([vf_preds, np.array([last_r])])

@@ -33,7 +33,8 @@ class PPOLagrangeLearnerHyperparameters(PPOLearnerHyperparameters):
     See `ray.rllib.algorithms.......::PPOLagrangeConfig::training()` for more details on the
     individual properties.
     """
-
+    cost_advant_std: bool = True
+    clip_cost_cvf: bool = False
     use_cost_critic: bool = None
     cvf_loss_coeff: float = None
     cvf_clip_param: float = None

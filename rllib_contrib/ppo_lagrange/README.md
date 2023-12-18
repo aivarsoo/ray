@@ -51,8 +51,8 @@ gradient descent on.
 ## Installation
 
 ```
-conda create -n rllib-maml python=3.10
-conda activate rllib-maml
+conda create -n rllib-ppo-l python=3.9
+conda activate rllib-ppo-l
 pip install -r requirements.txt
 pip install -e '.[development]'
 ```
