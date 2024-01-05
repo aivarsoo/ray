@@ -1,6 +1,6 @@
-from collections import deque
+# from collections import deque
 from dataclasses import dataclass
-from typing import Dict, Callable
+from typing import Dict
 
 from ray.rllib.algorithms.ppo.ppo_learner import PPOLearner
 from ray.rllib.algorithms.ppo.ppo_learner import PPOLearnerHyperparameters
@@ -17,12 +17,16 @@ LEARNER_RESULTS_CURR_KL_COEFF_KEY = "curr_kl_coeff"
 LEARNER_RESULTS_CURR_ENTROPY_COEFF_KEY = "curr_entropy_coeff"
 
 LEARNER_RESULTS_CURR_LARGANGE_PENALTY_COEFF_KEY = "curr_lagrange_penalty_coeff"
-MEAN_CONSTRAINT_VIOL = "mean_constraint_violation"
+LEARNER_RESULTS_MEAN_CONSTRAINT_VIOL = "mean_constraint_violation"
 PENALTY = "penalty_coefficient"
 P_PART = "P"
 I_PART = "I"
 D_PART = "D"
-SMOOTHED_VIOLATION = "smoothed_violation"
+AW_PART = "AW"
+SMOOTHED_VIOLATION = "smoothed_mean_violation"
+POLICY_COST_LOSS_KEY = "policy_cost_loss"
+POLICY_REWARD_LOSS_KEY = "policy_reward_loss"
+MEAN_ACCUMULATED_COST = "mean_accumulated_cost"
 
 @dataclass
 class PPOLagrangeLearnerHyperparameters(PPOLearnerHyperparameters):
@@ -33,16 +37,28 @@ class PPOLagrangeLearnerHyperparameters(PPOLearnerHyperparameters):
     See `ray.rllib.algorithms.......::PPOLagrangeConfig::training()` for more details on the
     individual properties.
     """
-    cost_advant_std: bool = True
-    clip_cost_cvf: bool = False
+    learn_penalty_coeff: bool = None
     use_cost_critic: bool = None
-    cvf_loss_coeff: float = None
-    cvf_clip_param: float = None
-    cost_limit: float = None
-    penalty_coeff_config: Dict = None
-    penalty_coefficient: float = None
-    smoothed_violation: float = None
-    i_part: float = None
+    # cost_advant_std: bool = False
+    # safety hyperparameters
+    track_debuging_values: bool = False
+    penalty_coeff_lr:float = 1e-2
+    init_penalty_coeff: float = 0.0
+    clip_cost_cvf: bool = False
+    cvf_loss_coeff: float = 1.0
+    cvf_clip_param: float = 1000.0
+    cost_limit: float = 25.0    
+    # PID Lagrange coefficients
+    p_coeff: float = 0.0
+    d_coeff: float = 0.0
+    aw_coeff: float = 0.0
+    polyak_coeff: float = 1.0
+    max_penalty_coeff: float = 100.0
+    # history of largrange coefficients 
+    penalty_coefficient: float = 0.0
+    smoothed_violation: float = 0.0
+    i_part: float = 0.0
+    aw_part: float = 0.0   
 
 
 class PPOLagrangeLearner(PPOLearner):
@@ -63,6 +79,9 @@ class PPOLagrangeLearner(PPOLearner):
                 ),
                 I_PART: self._get_tensor_variable(
                     self.hps.get_hps_for_module(module_id).i_part
+                ),
+                AW_PART: self._get_tensor_variable(
+                    self.hps.get_hps_for_module(module_id).aw_part
                 )
             }
         )

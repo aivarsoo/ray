@@ -275,16 +275,3 @@ class SafePendulumEnv(SafeEnv, PendulumEnv):
 
     def __str__(self):
         return "Safe Pendulum with angle constraints"
-
-
-# @saute_env
-# class SautedPendulumEnv(SafePendulumEnv):
-#     """Sauted safe pendulum."""
-#     def __str__(self):
-#         return "Sauted Pendulum with angle constraints"
-
-# @simmer_env
-# class SimmeredPendulumEnv(SafePendulumEnv):
-#     """Simmered safe pendulum."""
-#     def __str__(self):
-#         return "Simmered Pendulum with angle constraints"

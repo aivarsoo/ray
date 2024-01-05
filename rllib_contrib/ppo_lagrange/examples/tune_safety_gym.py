@@ -5,26 +5,10 @@ from ppo_lagrange import PPOLagrange
 
 import ray
 from ray import air, tune
-import numpy as np
-import safety_gymnasium
-from typing import Dict
-from ray.tune.registry import register_env
+import envs 
+
 import os
 os.environ['TUNE_PLACEMENT_GROUP_AUTO_DISABLED'] = '1'
-
-register_env("PointGoal1-v0", lambda config: safety_gymnasium.wrappers.SafetyGymnasium2Gymnasium(safety_gymnasium.make("SafetyPointGoal1-v0")))
-
-from envs.saute_env import SauteEnv
-
-def saute_safety_gym(env_name:str,config:Dict):
-    env = safety_gymnasium.wrappers.SafetyGymnasium2Gymnasium(safety_gymnasium.make(env_name))
-    return SauteEnv(env, safety_budget=config['cost_lim'], 
-        saute_discount_factor=config['cost_gamma'],
-        max_ep_len=config['max_ep_len'],
-        use_reward_shaping=False,
-        use_state_augmentation=True)
-    
-register_env("SautePointGoal1-v0", lambda config: saute_safety_gym("SafetyPointGoal1-v0",config))
 
 if __name__ == "__main__":
 
@@ -44,10 +28,8 @@ if __name__ == "__main__":
                 "metrics_num_episodes_for_smoothing": 20,
                 "observation_filter": "MeanStdFilter",
                 "enable_connectors": True,
-                "model": {"vf_share_layers": False, "fcnet_activation": "relu", "fcnet_hiddens": [256, 256, 256]}, #  ,  "use_lstm": True, "lstm_cell_size": 128
-                "env": "SautePointGoal1-v0",
-                # "env": tune.grid_search(["PointGoal1-v0", "SautePointGoal1-v0"]),
-                # "env": "SautePointGoal1-v0",
+                "model": {"vf_share_layers": False, "fcnet_activation": "relu", "fcnet_hiddens": [256, 256, 256]},
+                "env": "SafetyPointGoal1-v0",
                 "env_config":dict(
                     cost_lim=cost_lim,
                     max_ep_len=max_ep_len,
@@ -62,24 +44,38 @@ if __name__ == "__main__":
                 "lambda": 0.97,
                 "num_sgd_iter": 5, 
                 #### safety parameters
-                # "safety":{                
-                "cost_limit": cost_lim,
-                "cost_advant_std": False, #tune.choice([False]),
-                "clip_cost_cvf": False, #tune.choice([False]), 
+                'learn_penalty_coeff': True,
                 "cost_lambda_": 0.97,
                 "cost_gamma": cost_gamma,
-                "cvf_clip_param": 10000.0,                
-                "init_penalty_coeff": -0.5,
-                "penalty_coeff_config": {
-                    'learn_penalty_coeff': False,
-                    'penalty_coeff_lr': tune.grid_search([1e-3, 5e-3, 1e-2]),
-                    'pid_coeff': {"P":  0, "D": 0},
-                    'polyak_coeff': 1.0, 
+                "safety_config" : {
+                    "cost_limit": cost_lim,
+                    "cvf_clip_param": 10000.0,
+                    "init_penalty_coeff": 0.3,
+                    'polyak_coeff': 1.0,                     
+                    'penalty_coeff_lr': 5e-3,  
+                    'max_penalty_coeff': 100.0,
+                    "p_coeff": 0.0,                
+                    "d_coeff": 0.0,
+                    "aw_coeff": 0.0,
+                },      
+                # "safety":{                
+                # "cost_limit": cost_lim,
+                # "cost_advant_std": False, #tune.choice([False]),
+                # "clip_cost_cvf": False, #tune.choice([False]), 
+                # "cost_lambda_": 0.97,
+                # "cost_gamma": cost_gamma,
+                # "cvf_clip_param": 10000.0,                
+                # "init_penalty_coeff": -0.5,
+                # "penalty_coeff_config": {
+                    # 'learn_penalty_coeff': False,
+                    # 'penalty_coeff_lr': tune.grid_search([1e-3, 5e-3, 1e-2]),
+                    # 'pid_coeff': {"P":  0, "D": 0},
+                    # 'polyak_coeff': 1.0, 
                     # 'penalty_coeff_lr': tune.choice([6e-3, 1e-2]),
                     # 'pid_coeff': {"P": 0.0, "D": 0.0},
                     # 'polyak_coeff':  tune.choice([0.1, 0.2]), 
-                    'max_penalty_coeff': 100.0
-                    },
+                    # 'max_penalty_coeff': 100.0
+                    # },
                 # }
                 "seed": 44,
     }

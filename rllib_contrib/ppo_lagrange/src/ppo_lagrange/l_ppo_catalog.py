@@ -3,7 +3,6 @@ import gymnasium as gym
 from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
 from ray.rllib.core.models.base import Model
 from ray.rllib.core.models.configs import MLPHeadConfig
-from ray.rllib.utils import override
 from ray.rllib.utils.annotations import OverrideToImplementCustomLogic
 
 

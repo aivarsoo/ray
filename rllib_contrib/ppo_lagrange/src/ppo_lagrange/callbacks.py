@@ -27,8 +27,8 @@ class ComputeEpisodeCostCallback(DefaultCallbacks):
             "after env reset!"
         )
         # Create lists to store angles in
-        episode.user_data["costs"] = deque([],maxlen=1001)
-        episode.hist_data["costs"] = deque([],maxlen=1001)
+        episode.user_data["costs"] = deque([])
+        episode.hist_data["costs"] = deque([])
 
     def on_episode_step(
         self,
@@ -62,7 +62,7 @@ class ComputeEpisodeCostCallback(DefaultCallbacks):
     ):
         episode_cost = np.sum(episode.user_data["costs"])
         episode.custom_metrics["episode_cost"] = episode_cost
-        # episode.hist_data["costs"] = episode.user_data["costs"]
+        episode.hist_data["costs"] = episode.user_data["costs"]
 
     def on_train_result(self, *, algorithm, result: dict, **kwargs):
         result["callback_ok"] = True
@@ -71,20 +71,3 @@ class ComputeEpisodeCostCallback(DefaultCallbacks):
         result["custom_metrics"]["episode_cost_min"] = np.min(cost)
         result["custom_metrics"]["episode_cost_max"] = np.max(cost)
         result["custom_metrics"]["episode_cost_mean"] = np.mean(cost)
-        # result["episode_cost_min"] = np.min(cost)
-        # result["episode_cost_max"] = np.max(cost)
-        result['sampler_results']["episode_cost"] = np.mean(cost)
-
-
-    # def post_process_metrics(adapt_iter, workers, metrics):
-    #     # Obtain Current Dataset Metrics and filter out
-    #     name = "_adapt_" + str(adapt_iter) if adapt_iter > 0 else ""
-
-    #     # Only workers are collecting data
-    #     res = collect_metrics(remote_workers=workers.remote_workers())
-
-    #     metrics["episode_reward_max" + str(name)] = res["episode_reward_max"]
-    #     metrics["episode_reward_mean" + str(name)] = res["episode_reward_mean"]
-    #     metrics["episode_reward_min" + str(name)] = res["episode_reward_min"]
-
-    #     return metrics

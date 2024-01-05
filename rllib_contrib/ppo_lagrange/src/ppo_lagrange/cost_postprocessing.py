@@ -29,7 +29,6 @@ class RewardValuePostprocessing(Postprocessing):
     VALUES_BOOTSTRAPPED = SampleBatch.VALUES_BOOTSTRAPPED
     VF_LOSS_KEY = VF_LOSS_KEY
     RETURNS = "accumulated_rewards"
-    FINAL_STATE = "final_state"
     LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY = LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY
     LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY = LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY
 
@@ -154,7 +153,7 @@ def compute_gae_for_sample_batch(
         gamma=policy.config["cost_gamma"],
         lambda_=policy.config["cost_lambda_"],
         use_gae=policy.config["use_cost_gae"],
-        use_critic=policy.config.get("use_cost_critic", True),
+        use_critic=policy.config["use_cost_critic"],
     )
     return sample_batch
 

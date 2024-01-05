@@ -6,16 +6,8 @@ from ppo_lagrange import PPOLagrange
 import ray
 from ray import air, tune
 import envs 
-from ray.tune import CLIReporter
 
 if __name__ == "__main__":
-
-    # # Limit the number of rows.
-    reporter = CLIReporter(max_progress_rows=10)
-    # Add a custom metric column, in addition to the default metrics.
-    # Note that this must be a metric that is returned in your training results.
-    reporter.add_metric_column("episode_cost")
-    reporter.add_metric_column("custom_metrics/episode_cost_mean")
     
     max_concurrent_trials, num_samples, num_gpus, num_cpus = 1, 1, 1, 5
     ray.init(num_cpus=num_cpus,num_gpus=num_gpus, local_mode=True) # num_gpus=num_gpus, 
@@ -27,13 +19,11 @@ if __name__ == "__main__":
                 "num_rollout_workers": num_cpus-1,
                 "framework": "torch",
                 "vf_clip_param": 10000.0,                
-                "keep_per_episode_custom_metrics": True,
                 "metrics_num_episodes_for_smoothing": 20,
                 "observation_filter": "MeanStdFilter",
                 "enable_connectors": True,
                 "model": {"vf_share_layers": False, "fcnet_activation": "relu"},
                 "env": "SafePendulum-v0",
-                # "env": "SautePendulum-v0",
                 "env_config":dict(
                     cost_lim=cost_lim,
                     max_ep_len=max_ep_len,
@@ -48,20 +38,20 @@ if __name__ == "__main__":
                 "lambda": 0.95,
                 "num_sgd_iter": 80,
                 #### safety parameters
-                "cost_advant_std": False,
-                "clip_cost_cvf": False, 
-                "cost_limit": cost_lim,
+                'learn_penalty_coeff': True,
                 "cost_lambda_": 0.97,
                 "cost_gamma": cost_gamma,
-                "cvf_clip_param": 10000.0,
-                "init_penalty_coeff": -1.0,
-                "penalty_coeff_config": {
-                    'learn_penalty_coeff': True,
-                    'penalty_coeff_lr': 1e-2,
-                    'pid_coeff': {"P":  1e-1, "D": 0}, 
-                    'polyak_coeff': 0.2, 
-                    'max_penalty_coeff': 100.0
-                    },
+                "safety_config" : {
+                    "cost_limit": cost_lim,
+                    "cvf_clip_param": 10000.0,
+                    "init_penalty_coeff": 0.3,
+                    'polyak_coeff': 0.2,                     
+                    'penalty_coeff_lr': 1e-2,  
+                    'max_penalty_coeff': 100.0,
+                    "p_coeff": 1e-1,                
+                    "d_coeff": 0.0,
+                    "aw_coeff": 0.0,
+                },                
                 "seed": tune.choice([42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60]),
     }
     tuner = tune.Tuner(
@@ -74,7 +64,7 @@ if __name__ == "__main__":
             max_concurrent_trials=max_concurrent_trials,
         ),
         param_space=params,
-        run_config=air.RunConfig(stop=stop, progress_reporter=reporter),
+        run_config=air.RunConfig(stop=stop),
     )
     results = tuner.fit()
 

@@ -19,11 +19,8 @@ if __name__ == "__main__":
         entry_point='pendulum:SafePendulumEnv',
         max_episode_steps=pendulum_cfg['max_ep_len']
     )
-    # env = gym.make('CustomPendulum-v0', mode="deterministic")
-    # env.reset()
     env = gym.make('SafePendulum-v0', mode="deterministic")
     env.reset()
-    # print(env.wrap._mode)
     states, actions, next_states, rewards, dones, infos = [
         env.reset()], [], [], [], [], []
     for _ in range(3000):

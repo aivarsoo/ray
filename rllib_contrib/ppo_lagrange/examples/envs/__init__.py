@@ -6,26 +6,45 @@ from ray.tune.registry import register_env
 
 from envs.pendulum.pendulum import PendulumEnv
 from envs.pendulum.pendulum import SafePendulumEnv
+from envs.safety_gym_envs.custom_point_goal import CustomBuilder
 from typing import Dict
+import re
 
+def get_safety_gym_names(env_name:str):
+    class_names = re.findall('[A-Z][^A-Z]*', env_name.split('-')[0])
+    safety_type = class_names[0]
+    robot_name = class_names[1]
+    task_name = "".join(class_names[2:])
+    return safety_type, robot_name, task_name
 
-def custom_pendulum_creator(env_config: Dict):
+def safetygym_env_creator(env_name:str, config:Dict):    
+    safety_type, robot_name, task_name = get_safety_gym_names(env_name)
+    if safety_type == 'Saute':
+        env_name = 'Safety' + env_name[5:]
+    if task_name == 'SimpleGoal1':
+        config.update("agent_name", robot_name.lower())
+        env = CustomBuilder(task_id=env_name,
+                            config=config)
+    else:
+        env = safety_gymnasium.make(env_name)
+    # gymnasium wrapper
+    env = safety_gymnasium.wrappers.SafetyGymnasium2Gymnasium(env)
+    # saute wrapper
+    if safety_type == 'Saute':
+        env = SauteEnv(env,
+                       safety_budget=config['cost_lim'], 
+                       saute_discount_factor=config['cost_gamma'],
+                       max_ep_len=config['max_ep_len'],
+                       use_reward_shaping=False,
+                       use_state_augmentation=True)
+    return env
+
+def custom_pendulum_creator(config:Dict):
     return PendulumEnv() 
 
-def safe_pendulum_creator(env_config: Dict):
+def safe_pendulum_creator(config:Dict):
     return SafePendulumEnv()  
 
-def safegym_env_creator(env_name:str):    
-    return safety_gymnasium.wrappers.SafetyGymnasium2Gymnasium(safety_gymnasium.make(env_name))
-
-def saute_safety_gym(env_name:str,config:Dict):
-    env = safety_gymnasium.wrappers.SafetyGymnasium2Gymnasium(safety_gymnasium.make(env_name))
-    return SauteEnv(env, safety_budget=config['cost_lim'], 
-        saute_discount_factor=config['cost_gamma'],
-        max_ep_len=config['max_ep_len'],
-        use_reward_shaping=False,
-        use_state_augmentation=True)
-    
 def saute_pendulum_creator(env_config: Dict):
     env = SafePendulumEnv() 
     return SauteEnv(env, 
@@ -37,10 +56,15 @@ def saute_pendulum_creator(env_config: Dict):
 
 register_env("CustomPendulum-v0", custom_pendulum_creator)
 
-register_env("PointGoal1-v0", lambda config: safety_gymnasium.wrappers.SafetyGymnasium2Gymnasium(safety_gymnasium.make("SafetyPointGoal1-v0")))
-
-register_env("SautePointGoal1-v0", lambda config: saute_safety_gym("SafetyPointGoal1-v0"))
-
 register_env("SafePendulum-v0", safe_pendulum_creator)
 
 register_env("SautePendulum-v0", saute_pendulum_creator)
+
+register_env("SafetyPointGoal1-v0", lambda config: safetygym_env_creator("SafetyPointGoal1-v0", config))
+
+register_env("SautePointGoal1-v0", lambda config: safetygym_env_creator("SautePointGoal1-v0", config))
+
+register_env("SafetyPointSimpleGoal1-v0", lambda config: safetygym_env_creator("SafetyPointSimpleGoal1-v0",config))
+
+register_env("SautePointSimpleGoal1-v0", lambda config: safetygym_env_creator("SautePointSimpleGoal1-v0",config))
+

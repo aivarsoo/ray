@@ -2,7 +2,7 @@ from typing import Any
 from typing import Mapping
 
 from ppo_lagrange.cost_postprocessing import CostValuePostprocessing
-from ppo_lagrange.ppo_rl_module import PPOLagrangeRLModule
+from ppo_lagrange.l_ppo_rl_module import PPOLagrangeRLModule
 from ray.rllib.core.models.base import ACTOR
 from ray.rllib.core.models.base import CRITIC
 from ray.rllib.core.models.base import ENCODER_OUT
