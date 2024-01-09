@@ -6,7 +6,6 @@ from typing import Mapping
 from ppo_lagrange.cost_postprocessing import CostValuePostprocessing
 from ppo_lagrange.cost_postprocessing import Postprocessing
 from ppo_lagrange.cost_postprocessing import RewardValuePostprocessing
-from ppo_lagrange.l_ppo_learner import AW_PART
 from ppo_lagrange.l_ppo_learner import D_PART
 from ppo_lagrange.l_ppo_learner import I_PART
 from ppo_lagrange.l_ppo_learner import P_PART
@@ -238,18 +237,17 @@ class PPOLagrangeTorchLearner(PPOLagrangeLearner, TorchLearner):
             # previous infos
             penalty = current_lagrange_penalty_data[PENALTY]
             i_part = current_lagrange_penalty_data[I_PART]
-            aw_part = current_lagrange_penalty_data[AW_PART]
             smoothed_violation = current_lagrange_penalty_data[SMOOTHED_VIOLATION]
             # Low pass filter smoothing constraint violation curve 
             acc_costs = torch.tensor(sampled_lp_values[module_id]).to(device=smoothed_violation.device).mean()
-            mean_constrained_violation = (acc_costs - hps.cost_limit * torch.ones_like(acc_costs).to(device=smoothed_violation.device))            
+            mean_constraint_violation = (acc_costs - hps.cost_limit * torch.ones_like(acc_costs).to(device=smoothed_violation.device))            
             new_smoothed_violation = polyak_update(previous_value=smoothed_violation.data,
-                                           update_value=mean_constrained_violation,
+                                           update_value=mean_constraint_violation,
                                            alpha=hps.polyak_coeff) 
             # computing the gradient with respect to the penalty      
             lagrange_grad  = 1 - torch.exp(-penalty.data)
-            # I part + AW part computation
-            i_part.data += (hps.penalty_coeff_lr * new_smoothed_violation + hps.aw_coeff * aw_part) * lagrange_grad
+            # I part
+            i_part.data += (hps.penalty_coeff_lr * new_smoothed_violation) * lagrange_grad
             # P part computation
             p_part = hps.p_coeff * new_smoothed_violation * lagrange_grad
             # D part computation
@@ -260,12 +258,11 @@ class PPOLagrangeTorchLearner(PPOLagrangeLearner, TorchLearner):
             penalty.data = torch.clip(
                 raw_penalty, max=hps.max_penalty_coeff)
             # updating smoothed violations
-            smoothed_violation.data = new_smoothed_violation
-            aw_part.data = penalty.data - raw_penalty
+            smoothed_violation.data = new_smoothed_violation            
             
             results.update(
                 {LEARNER_RESULTS_CURR_LARGANGE_PENALTY_COEFF_KEY: penalty.item(),
-                 LEARNER_RESULTS_MEAN_CONSTRAINT_VIOL:mean_constrained_violation.item() / hps.cost_limit,
+                 LEARNER_RESULTS_MEAN_CONSTRAINT_VIOL:mean_constraint_violation.item() / hps.cost_limit,
                  })
             
             if hps.track_debuging_values:
@@ -274,7 +271,6 @@ class PPOLagrangeTorchLearner(PPOLagrangeLearner, TorchLearner):
                      D_PART: d_part.item(),
                      I_PART: i_part.item(),
                      P_PART: p_part.item(),
-                     AW_PART: aw_part.item(),                        
                      MEAN_ACCUMULATED_COST: acc_costs.item()
                     })
 

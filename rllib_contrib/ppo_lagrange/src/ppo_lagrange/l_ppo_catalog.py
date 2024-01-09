@@ -47,7 +47,6 @@ class PPOLagrangeCatalog(PPOCatalog):
             action_space=action_space,
             model_config_dict=model_config_dict,
         )
-        # TODO: rename self.pi_and_vf_head_hiddens and pi_and_vf_head_activation?
         self.cvf_head_config = MLPHeadConfig(
             input_dims=self.latent_dims,
             hidden_layer_dims=self.pi_and_vf_head_hiddens,

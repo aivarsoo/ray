@@ -231,7 +231,6 @@ class PPOLagrangeConfig(PPOConfig):
         assert self.safety_config.get('penalty_coeff_lr', 1e-4) > 0, "Learning rate must be positive"
         assert 1.0 >= self.safety_config.get('polyak_coeff', 1.0) > 0, "Polyak coefficient must be between zero and one"
         assert self.safety_config.get('max_penalty_coeff', 1000) > 0, "Maximum penalty coefficient must be positive"
-        # assert all(val >= 0 for val in self.penalty_coeff_config['pid_coeff'].values()), "PID coefficients must be nonnegative"
             
         
 class PPOLagrange(PPO):

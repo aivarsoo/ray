@@ -1,3 +1,4 @@
+# This environment was created in the repo https://github.com/huawei-noah/HEBO 
 from os import path
 from typing import Dict
 from typing import List
@@ -248,10 +249,6 @@ class PendulumEnv(Env):
 
 class SafePendulumEnv(SafeEnv, PendulumEnv):
     """Safe Pendulum environment."""
-    # def __init__(self,
-    #         params:Callable=None,
-    #         mode:str="train"):
-    #     super().__init__(params=params, mode=mode)
 
     def _is_near_unsafe_area_batch(self, thetas):
         return ((self.params.unsafe_min - self.params.hazard_area_size) <= thetas) & (thetas <= (self.params.unsafe_max + self.params.hazard_area_size))

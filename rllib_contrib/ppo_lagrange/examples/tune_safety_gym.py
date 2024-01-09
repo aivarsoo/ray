@@ -1,6 +1,5 @@
 import pprint
 
-from ray.rllib.algorithms.ppo.ppo import PPO
 from ppo_lagrange import PPOLagrange
 
 import ray
@@ -13,10 +12,9 @@ os.environ['TUNE_PLACEMENT_GROUP_AUTO_DISABLED'] = '1'
 if __name__ == "__main__":
 
     max_concurrent_trials, num_samples, num_gpus, num_cpus = 1, 1, 1, 2
-    ray.init(num_gpus=num_gpus, num_cpus=num_cpus, local_mode=True)
+    ray.init(num_gpus=num_gpus, num_cpus=num_cpus)
     stop = {
-        "num_agent_steps_sampled": 2e+6,
-        # 'training_iteration': 1
+        "num_agent_steps_sampled": 1e+7,
         }    
     cost_lim = 25.0
     max_ep_len = 1000
@@ -58,29 +56,10 @@ if __name__ == "__main__":
                     "d_coeff": 0.0,
                     "aw_coeff": 0.0,
                 },      
-                # "safety":{                
-                # "cost_limit": cost_lim,
-                # "cost_advant_std": False, #tune.choice([False]),
-                # "clip_cost_cvf": False, #tune.choice([False]), 
-                # "cost_lambda_": 0.97,
-                # "cost_gamma": cost_gamma,
-                # "cvf_clip_param": 10000.0,                
-                # "init_penalty_coeff": -0.5,
-                # "penalty_coeff_config": {
-                    # 'learn_penalty_coeff': False,
-                    # 'penalty_coeff_lr': tune.grid_search([1e-3, 5e-3, 1e-2]),
-                    # 'pid_coeff': {"P":  0, "D": 0},
-                    # 'polyak_coeff': 1.0, 
-                    # 'penalty_coeff_lr': tune.choice([6e-3, 1e-2]),
-                    # 'pid_coeff': {"P": 0.0, "D": 0.0},
-                    # 'polyak_coeff':  tune.choice([0.1, 0.2]), 
-                    # 'max_penalty_coeff': 100.0
-                    # },
-                # }
-                "seed": 44,
+
+                "seed": tune.grid_search([44, 45, 46]),
     }
-    # for env in ["SautePointGoal1-v0", "PointGoal1-v0"]:
-    #   params['env'] = env
+
     tuner = tune.Tuner(
         PPOLagrange,
         tune_config=tune.TuneConfig(

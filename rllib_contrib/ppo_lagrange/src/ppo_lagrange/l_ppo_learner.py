@@ -22,7 +22,6 @@ PENALTY = "penalty_coefficient"
 P_PART = "P"
 I_PART = "I"
 D_PART = "D"
-AW_PART = "AW"
 SMOOTHED_VIOLATION = "smoothed_mean_violation"
 POLICY_COST_LOSS_KEY = "policy_cost_loss"
 POLICY_REWARD_LOSS_KEY = "policy_reward_loss"
@@ -51,7 +50,6 @@ class PPOLagrangeLearnerHyperparameters(PPOLearnerHyperparameters):
     # PID Lagrange coefficients
     p_coeff: float = 0.0
     d_coeff: float = 0.0
-    aw_coeff: float = 0.0
     polyak_coeff: float = 1.0
     max_penalty_coeff: float = 100.0
     # history of largrange coefficients 
@@ -80,9 +78,6 @@ class PPOLagrangeLearner(PPOLearner):
                 I_PART: self._get_tensor_variable(
                     self.hps.get_hps_for_module(module_id).i_part
                 ),
-                AW_PART: self._get_tensor_variable(
-                    self.hps.get_hps_for_module(module_id).aw_part
-                )
             }
         )
 

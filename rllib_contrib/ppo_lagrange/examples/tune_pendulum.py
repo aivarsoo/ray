@@ -1,12 +1,8 @@
-import pprint
-
-from ray.rllib.algorithms.ppo.ppo import PPO
 from ppo_lagrange import PPOLagrange
 
 import ray
 from ray import air, tune
 import envs.pendulum
-from typing import Any, Callable, Collection, Dict, List, Optional, Tuple, Union
 
        
 if __name__ == "__main__":
@@ -50,8 +46,6 @@ if __name__ == "__main__":
         tune_config=tune.TuneConfig(
             metric="episode_reward_mean",
             mode="max",
-            # metric="custom_metrics/episode_cost_mean",
-            # mode="min",
             scheduler=None,
             num_samples=num_samples,
             max_concurrent_trials=max_concurrent_trials,

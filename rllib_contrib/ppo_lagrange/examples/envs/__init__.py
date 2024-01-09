@@ -6,7 +6,6 @@ from ray.tune.registry import register_env
 
 from envs.pendulum.pendulum import PendulumEnv
 from envs.pendulum.pendulum import SafePendulumEnv
-from envs.safety_gym_envs.custom_point_goal import CustomBuilder
 from typing import Dict
 import re
 
@@ -21,12 +20,7 @@ def safetygym_env_creator(env_name:str, config:Dict):
     safety_type, robot_name, task_name = get_safety_gym_names(env_name)
     if safety_type == 'Saute':
         env_name = 'Safety' + env_name[5:]
-    if task_name == 'SimpleGoal1':
-        config.update("agent_name", robot_name.lower())
-        env = CustomBuilder(task_id=env_name,
-                            config=config)
-    else:
-        env = safety_gymnasium.make(env_name)
+    env = safety_gymnasium.make(env_name)
     # gymnasium wrapper
     env = safety_gymnasium.wrappers.SafetyGymnasium2Gymnasium(env)
     # saute wrapper
