@@ -56,15 +56,3 @@ conda activate rllib-ppo-l
 pip install -r requirements.txt
 pip install -e '.[development]'
 ```
-
-1. `ppo_catalog.py` - class for defining policy network, value function network, actor-critic networks
-1. `ppo_torch_policy.py` - class that contains the loss computations
-1. `PPOCatalog.get_default_rl_module_spec`
-1. `PPORLModule` creates models from the catalog
-
-# TODO:
-1. refactor `MultiAgentBatch` to take in costs?
-1. implement the postprocessing method and test if it works
-1. install safety gym
-1. update safety config partially
-1. Refactor to make it nice
