@@ -1,9 +1,11 @@
-from typing import Dict
-from typing import Optional
+from typing import Dict, Optional
 
 import numpy as np
-from ray.rllib.algorithms.ppo.ppo_learner import LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY
-from ray.rllib.algorithms.ppo.ppo_learner import LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY
+
+from ray.rllib.algorithms.ppo.ppo_learner import (
+    LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY,
+    LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY,
+)
 from ray.rllib.core.learner.learner import VF_LOSS_KEY
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.postprocessing import discount_cumsum
@@ -13,12 +15,11 @@ from ray.rllib.utils.annotations import DeveloperAPI
 from ray.rllib.utils.nested_dict import NestedDict
 from ray.rllib.utils.numpy import convert_to_numpy
 from ray.rllib.utils.torch_utils import convert_to_torch_tensor
-from ray.rllib.utils.typing import AgentID
-from ray.rllib.utils.typing import TensorType
+from ray.rllib.utils.typing import AgentID, TensorType
 
 
 class Postprocessing:
-    "Abstract class for postprocessing"
+    """Abstract class for postprocessing"""
 
 
 class RewardValuePostprocessing(Postprocessing):
@@ -41,8 +42,12 @@ class CostValuePostprocessing(Postprocessing):
     VALUES_BOOTSTRAPPED = "cost_values_bootstrapped"
     VF_LOSS_KEY = "cost_" + VF_LOSS_KEY
     RETURNS = "accumulated_costs"
-    LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY = "cost_" + LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY
-    LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY = "cost_" + LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY
+    LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY = (
+        "cost_" + LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY
+    )
+    LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY = (
+        "cost_" + LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY
+    )
 
 
 @DeveloperAPI
@@ -86,12 +91,12 @@ def compute_advantages(
     if vf_preds is None and use_critic:
         vf_preds = rollout[post_process.VF_PREDS]
 
-    # computing accumulated returns 
+    # computing accumulated returns
     rewards_plus_v = np.concatenate([rewards, np.array([last_r])])
-    accumulated_returns = discount_cumsum(rewards_plus_v, 1.0)[:-1].astype(
-        np.float32
-    )
-    rollout[post_process.RETURNS] = accumulated_returns[0] * np.ones_like(rewards) # needed for RNN
+    accumulated_returns = discount_cumsum(rewards_plus_v, 1.0)[:-1].astype(np.float32)
+    rollout[post_process.RETURNS] = accumulated_returns[0] * np.ones_like(
+        rewards
+    )  # needed for RNN
 
     if use_gae:
         vpred_t = np.concatenate([vf_preds, np.array([last_r])])
@@ -142,7 +147,11 @@ def compute_gae_for_sample_batch(
     )
     # adding costs to the sample batch if they exist
     sample_batch[CostValuePostprocessing.REWARDS] = np.array(
-        [info.get('cost', 0) if type(info) == dict else info for info in sample_batch['infos']])
+        [
+            info.get("cost", 0) if type(info) == dict else info
+            for info in sample_batch["infos"]
+        ]
+    )
 
     sample_batch = compute_cost_gae_for_sample_batch(
         policy=policy,
@@ -196,7 +205,8 @@ def compute_cost_gae_for_sample_batch(
     # Compute the SampleBatch.VALUES_BOOTSTRAPPED column, which we'll need for the
     # following `last_r` arg in `compute_advantages()`.
     sample_batch = compute_bootstrap_value(
-        sample_batch, policy, post_process=post_process)
+        sample_batch, policy, post_process=post_process
+    )
 
     vf_preds = np.array(sample_batch[post_process.VF_PREDS])
     rewards = np.array(sample_batch[post_process.REWARDS])
@@ -236,7 +246,9 @@ def compute_cost_gae_for_sample_batch(
 
 
 @DeveloperAPI
-def compute_bootstrap_value(sample_batch: SampleBatch, policy: Policy, post_process: Postprocessing) -> SampleBatch:
+def compute_bootstrap_value(
+    sample_batch: SampleBatch, policy: Policy, post_process: Postprocessing
+) -> SampleBatch:
     """Performs a value function computation at the end of a trajectory.
 
     If the trajectory is terminated (not truncated), will not use the value function,

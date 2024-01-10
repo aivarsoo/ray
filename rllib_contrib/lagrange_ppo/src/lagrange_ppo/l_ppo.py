@@ -8,45 +8,39 @@ See `ppo_[tf|torch]_policy.py` for the definition of the policy loss.
 
 Detailed documentation: https://docs.ray.io/en/master/rllib-algorithms.html#ppo
 """
+import copy
 import dataclasses
 import logging
-from typing import (
-    Dict,
-    Optional,
-    Type,
-    TYPE_CHECKING,
-    Union
-)
+from typing import TYPE_CHECKING, Dict, Optional, Type, Union
 
 import numpy as np
-import copy
-from ray.rllib.algorithms.algorithm_config import AlgorithmConfig
-from ray.rllib.algorithms.algorithm_config import NotProvided
-from ray.rllib.algorithms.ppo.ppo import PPO
-from ray.rllib.algorithms.ppo.ppo import PPOConfig
+from lagrange_ppo.callbacks import ComputeEpisodeCostCallback
+from lagrange_ppo.cost_postprocessing import CostValuePostprocessing
+from lagrange_ppo.l_ppo_catalog import PPOLagrangeCatalog
+from lagrange_ppo.l_ppo_learner import PPOLagrangeLearnerHyperparameters
+from lagrange_ppo.utils import substract_average
+
+from ray.rllib.algorithms.algorithm_config import AlgorithmConfig, NotProvided
+from ray.rllib.algorithms.ppo.ppo import PPO, PPOConfig
 from ray.rllib.algorithms.ppo.ppo_learner import LEARNER_RESULTS_KL_KEY
 from ray.rllib.core.rl_module.rl_module import SingleAgentRLModuleSpec
-from ray.rllib.execution.rollout_ops import standardize_fields
-from ray.rllib.execution.rollout_ops import synchronous_parallel_sample
-from ray.rllib.execution.train_ops import multi_gpu_train_one_step
-from ray.rllib.execution.train_ops import train_one_step
+from ray.rllib.execution.rollout_ops import (
+    standardize_fields,
+    synchronous_parallel_sample,
+)
+from ray.rllib.execution.train_ops import multi_gpu_train_one_step, train_one_step
 from ray.rllib.policy.policy import Policy
-from ray.rllib.utils.annotations import ExperimentalAPI
-from ray.rllib.utils.annotations import override
-from ray.rllib.utils.metrics import ALL_MODULES
-from ray.rllib.utils.metrics import NUM_AGENT_STEPS_SAMPLED
-from ray.rllib.utils.metrics import NUM_ENV_STEPS_SAMPLED
-from ray.rllib.utils.metrics import SAMPLE_TIMER
-from ray.rllib.utils.metrics import SYNCH_WORKER_WEIGHTS_TIMER
+from ray.rllib.utils.annotations import ExperimentalAPI, override
+from ray.rllib.utils.metrics import (
+    ALL_MODULES,
+    NUM_AGENT_STEPS_SAMPLED,
+    NUM_ENV_STEPS_SAMPLED,
+    SAMPLE_TIMER,
+    SYNCH_WORKER_WEIGHTS_TIMER,
+)
 from ray.rllib.utils.metrics.learner_info import LEARNER_STATS_KEY
 from ray.rllib.utils.typing import ResultDict
 from ray.util.debug import log_once
-
-from ppo_lagrange.callbacks import ComputeEpisodeCostCallback
-from ppo_lagrange.cost_postprocessing import CostValuePostprocessing
-from ppo_lagrange.l_ppo_catalog import PPOLagrangeCatalog
-from ppo_lagrange.l_ppo_learner import PPOLagrangeLearnerHyperparameters
-from ppo_lagrange.utils import substract_average
 
 if TYPE_CHECKING:
     from ray.rllib.core.learner.learner import Learner
@@ -97,19 +91,18 @@ class PPOLagrangeConfig(PPOConfig):
 
         self.learn_penalty_coeff = False
         self.safety_config = dict(
-                track_debuging_values = False,
-                penalty_coeff_lr = 1e-2,
-                init_penalty_coeff = 0.0,
-                clip_cost_cvf = False,
-                cvf_loss_coeff = 1.0,
-                cvf_clip_param = 1000.0,
-                cost_limit = 25.0,
-                # PID Lagrange coefficients
-                p_coeff = 0.0,
-                d_coeff = 0.0,
-                aw_coeff = 0.0,
-                polyak_coeff = 1.0,
-                max_penalty_coeff = 100.0,
+            track_debuging_values=False,
+            penalty_coeff_lr=1e-2,
+            init_penalty_coeff=0.0,
+            clip_cost_cvf=False,
+            cvf_loss_coeff=1.0,
+            cvf_clip_param=1000.0,
+            cost_limit=25.0,
+            # PID Lagrange coefficients
+            p_coeff=0.0,
+            d_coeff=0.0,
+            polyak_coeff=1.0,
+            max_penalty_coeff=100.0,
         )
         self.cost_lambda_ = 1.0
         self.cost_gamma = 1.0
@@ -123,7 +116,7 @@ class PPOLagrangeConfig(PPOConfig):
     @override(PPOConfig)
     def get_default_rl_module_spec(self) -> SingleAgentRLModuleSpec:
         if self.framework_str == "torch":
-            from ppo_lagrange.torch.l_ppo_torch_rl_module import (
+            from lagrange_ppo.torch.l_ppo_torch_rl_module import (
                 PPOLagrangeTorchRLModule,
             )
 
@@ -132,36 +125,37 @@ class PPOLagrangeConfig(PPOConfig):
             )
         else:
             raise ValueError(
-                f"The framework {self.framework_str} is not supported. "
-                "Use 'torch'"
+                f"The framework {self.framework_str} is not supported. " "Use 'torch'"
             )
 
     @override(PPOConfig)
     def get_default_learner_class(self) -> Union[Type["Learner"], str]:
         if self.framework_str == "torch":
-            from ppo_lagrange.torch.l_ppo_torch_learner import (
-                PPOLagrangeTorchLearner,
-            )
+            from lagrange_ppo.torch.l_ppo_torch_learner import PPOLagrangeTorchLearner
 
             return PPOLagrangeTorchLearner
 
         else:
             raise ValueError(
-                f"The framework {self.framework_str} is not supported. "
-                "Use 'torch'."
+                f"The framework {self.framework_str} is not supported. " "Use 'torch'."
             )
 
     @override(PPOConfig)
     def get_learner_hyperparameters(self) -> PPOLagrangeLearnerHyperparameters:
         base_hps = super().get_learner_hyperparameters()
         safety_config = copy.deepcopy(self.safety_config)
-        init_penalty_coeff = max(float(safety_config.get('init_penalty_coeff', 0)), 1e-4)
-        safety_config.update({
-            'penalty_coefficient':init_penalty_coeff,
-            # we represent the lagrange penalty coefficeint through softplus(x)
-            'i_part': np.log(np.exp(init_penalty_coeff) - 1)}) 
+        init_penalty_coeff = max(
+            float(safety_config.get("init_penalty_coeff", 0)), 1e-4
+        )
+        safety_config.update(
+            {
+                "penalty_coefficient": init_penalty_coeff,
+                # we represent the lagrange penalty coefficeint through softplus(x)
+                "i_part": np.log(np.exp(init_penalty_coeff) - 1),
+            }
+        )
         return PPOLagrangeLearnerHyperparameters(
-            learn_penalty_coeff = self.learn_penalty_coeff,
+            learn_penalty_coeff=self.learn_penalty_coeff,
             use_cost_critic=self.use_cost_critic,
             **safety_config,
             **dataclasses.asdict(base_hps),
@@ -183,19 +177,21 @@ class PPOLagrangeConfig(PPOConfig):
         """Sets the training related configuration.
 
         Args:
-            use_cost_critic: Should use a critic for the cost as a baseline (otherwise don't use value
-                baseline; required for using GAE).
+            use_cost_critic: Should use a critic for the cost as a baseline (otherwise
+                don't use value baseline; required for using GAE).
             use_cost_gae: If true, use the Generalized Advantage Estimator (GAE)
                 with a cost value function, see https://arxiv.org/pdf/1506.02438.pdf.
             cost_lambda_: The GAE (lambda) parameter for the cost GAE.
-            cvf_loss_coeff: Coefficient of the cost value function loss. IMPORTANT: you must
-                tune this if you set vf_share_layers=True inside your model's config.
+            cvf_loss_coeff: Coefficient of the cost value function loss. IMPORTANT: you
+                must tune this if you set vf_share_layers=True inside your model's
+                config.
             cvf_clip_param: Clip param for the cost value function. Note that this is
                 sensitive to the scale of the rewards. If your expected V is large,
                 increase this.
             init_penalty_coeff: Initial Lagrange penalty coefficient.
             cost_limit: Cost limit in the constraint.
-            penalty_coeff_config: Configuration dictionary for penalty coefficient learning.
+            penalty_coeff_config: Configuration dictionary for penalty coefficient
+                learning.
         Returns:
             This updated AlgorithmConfig object.
         """
@@ -207,7 +203,7 @@ class PPOLagrangeConfig(PPOConfig):
         if learn_penalty_coeff is not NotProvided:
             self.learn_penalty_coeff = learn_penalty_coeff
         if safety_config is not NotProvided:
-            self.safety_config = safety_config        
+            self.safety_config = safety_config
         if cost_lambda_ is not NotProvided:
             self.cost_lambda_ = cost_lambda_
         if cost_gamma is not NotProvided:
@@ -225,14 +221,24 @@ class PPOLagrangeConfig(PPOConfig):
     @override(PPOConfig)
     def validate(self) -> None:
         # Call super's validation method.
-        super().validate()               
-        assert 1.0 >= self.cost_gamma > 0, "Cost discount factor coefficient must be between zero and one"
-        assert 1.0 >= self.cost_lambda_ > 0, "Cost GAE lambda coefficient must be between zero and one"
-        assert self.safety_config.get('penalty_coeff_lr', 1e-4) > 0, "Learning rate must be positive"
-        assert 1.0 >= self.safety_config.get('polyak_coeff', 1.0) > 0, "Polyak coefficient must be between zero and one"
-        assert self.safety_config.get('max_penalty_coeff', 1000) > 0, "Maximum penalty coefficient must be positive"
-            
-        
+        super().validate()
+        assert (
+            1.0 >= self.cost_gamma > 0
+        ), "Cost discount factor coefficient must be between zero and one"
+        assert (
+            1.0 >= self.cost_lambda_ > 0
+        ), "Cost GAE lambda coefficient must be between zero and one"
+        assert (
+            self.safety_config.get("penalty_coeff_lr", 1e-4) > 0
+        ), "Learning rate must be positive"
+        assert (
+            1.0 >= self.safety_config.get("polyak_coeff", 1.0) > 0
+        ), "Polyak coefficient must be between zero and one"
+        assert (
+            self.safety_config.get("max_penalty_coeff", 1000) > 0
+        ), "Maximum penalty coefficient must be positive"
+
+
 class PPOLagrange(PPO):
     @classmethod
     @override(PPO)
@@ -246,13 +252,13 @@ class PPOLagrange(PPO):
     ) -> Optional[Type[Policy]]:
         if config["framework"] == "torch":
 
-            from ppo_lagrange.l_ppo_torch_policy import PPOLagrangeTorchPolicy
+            from lagrange_ppo.l_ppo_torch_policy import PPOLagrangeTorchPolicy
+
             return PPOLagrangeTorchPolicy
 
         else:
             raise ValueError(
-                f"The framework {config['framework']} is not supported. "
-                "Use 'torch'"
+                f"The framework {config['framework']} is not supported. " "Use 'torch'"
             )
 
     @ExperimentalAPI
@@ -275,11 +281,13 @@ class PPOLagrange(PPO):
 
         # Standardize advantages
         if self.config.cost_advant_std:
-            train_batch = standardize_fields(train_batch, ["advantages", "cost_advantages"])
+            train_batch = standardize_fields(
+                train_batch, ["advantages", "cost_advantages"]
+            )
         else:
             train_batch = standardize_fields(train_batch, ["advantages"])
             train_batch = substract_average(train_batch, ["cost_advantages"])
-        
+
         # Train
         if self.config._enable_learner_api:
             # TODO (Kourosh) Clearly define what train_batch_size
@@ -364,12 +372,6 @@ class PPOLagrange(PPO):
                     if np.isnan(acc_costs).any():
                         logger.warning(
                             f"Largrangian coefficient for Module {pid} is non-finite"
-                            # "likely destabilize your model and the training process. "
-                            # "Action(s) in a specific state have near-zero probability. "
-                            # "This can happen naturally in deterministic environments "
-                            # "where the optimal policy has zero mass for a specific "
-                            # "action. To fix this issue, consider setting `kl_coeff` to "
-                            # "0.0 or increasing `entropy_coeff` in your config."
                         )
             # triggers a special update method on RLOptimizer to update the KL values.
             additional_results = self.learner_group.additional_update(

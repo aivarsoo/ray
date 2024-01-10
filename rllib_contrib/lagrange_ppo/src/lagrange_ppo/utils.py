@@ -1,21 +1,16 @@
 import logging
 from typing import List
 
-import numpy as np
-from ppo_lagrange.cost_postprocessing import CostValuePostprocessing
-from ray.rllib.execution.common import (
-    _check_sample_batch_type,
-)
+from lagrange_ppo.cost_postprocessing import CostValuePostprocessing
+
+from ray.rllib.execution.common import _check_sample_batch_type
 from ray.rllib.policy.policy import Policy
-from ray.rllib.policy.sample_batch import DEFAULT_POLICY_ID
-from ray.rllib.policy.sample_batch import SampleBatch
+from ray.rllib.policy.sample_batch import DEFAULT_POLICY_ID, SampleBatch
 from ray.rllib.policy.torch_mixins import ValueNetworkMixin
-from ray.rllib.utils.annotations import DeveloperAPI
-from ray.rllib.utils.annotations import override
+from ray.rllib.utils.annotations import DeveloperAPI, override
 from ray.rllib.utils.deprecation import Deprecated
 from ray.rllib.utils.schedules import PiecewiseSchedule
-from ray.rllib.utils.typing import SampleBatchType
-from ray.rllib.utils.typing import AlgorithmConfigDict
+from ray.rllib.utils.typing import AlgorithmConfigDict, SampleBatchType
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +73,14 @@ class CostAndValueNetworkMixins(ValueNetworkMixin):
         # Return value function outputs. VF and CVF estimates will hence be added to
         # the SampleBatches produced by the sampler(s) to generate the train
         # batches going into the loss function.
-        res_dict = super().extra_action_out(input_dict, state_batches, model, action_dist)
-        res_dict.update({
-            CostValuePostprocessing.VF_PREDS: model.cost_value_function(),
-        })
+        res_dict = super().extra_action_out(
+            input_dict, state_batches, model, action_dist
+        )
+        res_dict.update(
+            {
+                CostValuePostprocessing.VF_PREDS: model.cost_value_function(),
+            }
+        )
         return res_dict
 
 
@@ -144,4 +143,3 @@ def validate_config(config: AlgorithmConfigDict) -> None:
             "`vf_share_layers=True` in your model. "
             "Therefore, remember to tune the value of `vf_loss_coeff`!"
         )
-

@@ -1,35 +1,36 @@
 import logging
-from typing import Any
-from typing import Dict
-from typing import Mapping
+from typing import Any, Dict, Mapping
 
-from ppo_lagrange.cost_postprocessing import CostValuePostprocessing
-from ppo_lagrange.cost_postprocessing import Postprocessing
-from ppo_lagrange.cost_postprocessing import RewardValuePostprocessing
-from ppo_lagrange.l_ppo_learner import D_PART
-from ppo_lagrange.l_ppo_learner import I_PART
-from ppo_lagrange.l_ppo_learner import P_PART
-from ppo_lagrange.l_ppo_learner import LEARNER_RESULTS_CURR_KL_COEFF_KEY
-from ppo_lagrange.l_ppo_learner import LEARNER_RESULTS_CURR_LARGANGE_PENALTY_COEFF_KEY
-from ppo_lagrange.l_ppo_learner import LEARNER_RESULTS_KL_KEY
-from ppo_lagrange.l_ppo_learner import LEARNER_RESULTS_MEAN_CONSTRAINT_VIOL
-from ppo_lagrange.l_ppo_learner import MEAN_ACCUMULATED_COST
-from ppo_lagrange.l_ppo_learner import SMOOTHED_VIOLATION
-from ppo_lagrange.l_ppo_learner import PENALTY
-from ppo_lagrange.l_ppo_learner import POLICY_REWARD_LOSS_KEY
-from ppo_lagrange.l_ppo_learner import POLICY_COST_LOSS_KEY
-from ppo_lagrange.l_ppo_learner import PPOLagrangeLearner
-from ppo_lagrange.l_ppo_learner import PPOLagrangeLearnerHyperparameters
-from ray.rllib.core.learner.learner import ENTROPY_KEY
-from ray.rllib.core.learner.learner import POLICY_LOSS_KEY
+from lagrange_ppo.cost_postprocessing import (
+    CostValuePostprocessing,
+    Postprocessing,
+    RewardValuePostprocessing,
+)
+from lagrange_ppo.l_ppo_learner import (
+    D_PART,
+    I_PART,
+    LEARNER_RESULTS_CURR_KL_COEFF_KEY,
+    LEARNER_RESULTS_CURR_LARGANGE_PENALTY_COEFF_KEY,
+    LEARNER_RESULTS_KL_KEY,
+    LEARNER_RESULTS_MEAN_CONST_VIOL,
+    MEAN_ACCUMULATED_COST,
+    P_PART,
+    PENALTY,
+    POLICY_COST_LOSS_KEY,
+    POLICY_REWARD_LOSS_KEY,
+    SMOOTHED_VIOLATION,
+    PPOLagrangeLearner,
+    PPOLagrangeLearnerHyperparameters,
+)
+
+from ray.rllib.core.learner.learner import ENTROPY_KEY, POLICY_LOSS_KEY
 from ray.rllib.core.learner.torch.torch_learner import TorchLearner
 from ray.rllib.core.rl_module.rl_module import ModuleID
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.framework import try_import_torch
 from ray.rllib.utils.nested_dict import NestedDict
-from ray.rllib.utils.torch_utils import explained_variance
-from ray.rllib.utils.torch_utils import sequence_mask
+from ray.rllib.utils.torch_utils import explained_variance, sequence_mask
 from ray.rllib.utils.typing import TensorType
 
 torch, nn = try_import_torch()
@@ -37,7 +38,9 @@ torch, nn = try_import_torch()
 logger = logging.getLogger(__name__)
 
 
-def polyak_update(previous_value: TensorType, update_value: TensorType, alpha: float) -> TensorType:
+def polyak_update(
+    previous_value: TensorType, update_value: TensorType, alpha: float
+) -> TensorType:
     return (1 - alpha) * previous_value + alpha * update_value
 
 
@@ -106,20 +109,27 @@ class PPOLagrangeTorchLearner(PPOLagrangeLearner, TorchLearner):
         curr_entropy = curr_action_dist.entropy()
         mean_entropy = possibly_masked_mean(curr_entropy)
 
-        def update_value_function(current_batch: SampleBatch, post_processing: Postprocessing, use_critic: bool, clip_param: float, clip_ratio: bool = True):
-            surrogate_obj = current_batch[post_processing.ADVANTAGES] * logp_ratio
+        def update_value_function(
+            current_batch: SampleBatch,
+            post_proc: Postprocessing,
+            use_critic: bool,
+            clip_param: float,
+            clip_ratio: bool = True,
+        ):
+            surrogate_obj = current_batch[post_proc.ADVANTAGES] * logp_ratio
             if clip_ratio:
                 surrogate_obj = torch.min(
                     surrogate_obj,
-                    current_batch[post_processing.ADVANTAGES]
+                    current_batch[post_proc.ADVANTAGES]
                     * torch.clamp(logp_ratio, 1 - hps.clip_param, 1 + hps.clip_param),
                 )
-            surrogate_loss = - surrogate_obj
+            surrogate_loss = -surrogate_obj
             # Compute a value function loss.
             if use_critic:
-                value_fn_out = fwd_out[post_processing.VF_PREDS]
+                value_fn_out = fwd_out[post_proc.VF_PREDS]
                 vf_loss = torch.pow(
-                    value_fn_out - current_batch[post_processing.VALUE_TARGETS], 2.0)
+                    value_fn_out - current_batch[post_proc.VALUE_TARGETS], 2.0
+                )
                 vf_loss_clipped = torch.clamp(vf_loss, 0, clip_param)
                 mean_vf_loss = possibly_masked_mean(vf_loss_clipped)
                 mean_vf_unclipped_loss = possibly_masked_mean(vf_loss)
@@ -127,41 +137,47 @@ class PPOLagrangeTorchLearner(PPOLagrangeLearner, TorchLearner):
             else:
                 value_fn_out = torch.tensor(0.0).to(surrogate_loss.device)
                 mean_vf_unclipped_loss = torch.tensor(0.0).to(surrogate_loss.device)
-                vf_loss_clipped = mean_vf_loss = torch.tensor(
-                    0.0).to(surrogate_loss.device)
+                vf_loss_clipped = mean_vf_loss = torch.tensor(0.0).to(
+                    surrogate_loss.device
+                )
 
             # Creating metrics
             metrics = {
-                post_processing.VF_LOSS_KEY: mean_vf_loss,
-                post_processing.LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY: mean_vf_unclipped_loss,
-                post_processing.LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY: explained_variance(
-                    current_batch[post_processing.VALUE_TARGETS], value_fn_out
-                )}
+                post_proc.VF_LOSS_KEY: mean_vf_loss,
+                post_proc.LEARNER_RESULTS_VF_LOSS_UNCLIPPED_KEY: mean_vf_unclipped_loss,
+                post_proc.LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY: explained_variance(
+                    current_batch[post_proc.VALUE_TARGETS], value_fn_out
+                ),
+            }
 
             return surrogate_loss, vf_loss_clipped, metrics
 
         reward_surrogate_loss, vf_loss_clipped, value_metrics = update_value_function(
             current_batch=batch,
-            post_processing=RewardValuePostprocessing,
+            post_proc=RewardValuePostprocessing,
             use_critic=hps.use_critic,
             clip_param=hps.vf_clip_param,
-            clip_ratio=True
+            clip_ratio=True,
         )
-                
+
         cost_surrogate_loss, cvf_loss_clipped, cost_metrics = update_value_function(
             current_batch=batch,
-            post_processing=CostValuePostprocessing,
+            post_proc=CostValuePostprocessing,
             use_critic=hps.use_cost_critic,
             clip_param=hps.cvf_clip_param,
-            clip_ratio=hps.clip_cost_cvf
+            clip_ratio=hps.clip_cost_cvf,
         )
 
-        current_lagrange_penalty_coefficients = self.curr_lagrange_penalty_coeffs_per_module[module_id]
+        current_lagrange_penalty_coefficients = (
+            self.curr_lagrange_penalty_coeffs_per_module[module_id]
+        )
         current_penalty = current_lagrange_penalty_coefficients[PENALTY]
-        surrogate_loss = (reward_surrogate_loss - current_penalty * cost_surrogate_loss) / (1 + current_penalty)
+        surrogate_loss = (
+            reward_surrogate_loss - current_penalty * cost_surrogate_loss
+        ) / (1 + current_penalty)
 
         total_loss = possibly_masked_mean(
-            surrogate_loss 
+            surrogate_loss
             + hps.vf_loss_coeff * vf_loss_clipped
             + hps.cvf_loss_coeff * cvf_loss_clipped
             - (
@@ -179,24 +195,23 @@ class PPOLagrangeTorchLearner(PPOLagrangeLearner, TorchLearner):
         metrics = {
             POLICY_LOSS_KEY: possibly_masked_mean(surrogate_loss),
             ENTROPY_KEY: mean_entropy.item(),
-            LEARNER_RESULTS_KL_KEY: mean_kl_loss            
+            LEARNER_RESULTS_KL_KEY: mean_kl_loss,
         }
         if hps.track_debuging_values:
-            metrics.update({
-                POLICY_REWARD_LOSS_KEY: possibly_masked_mean(reward_surrogate_loss),
-                POLICY_COST_LOSS_KEY: possibly_masked_mean(cost_surrogate_loss),
-            })
-            
+            metrics.update(
+                {
+                    POLICY_REWARD_LOSS_KEY: possibly_masked_mean(reward_surrogate_loss),
+                    POLICY_COST_LOSS_KEY: possibly_masked_mean(cost_surrogate_loss),
+                }
+            )
+
         # Register metrics for the reward value function
         metrics.update(value_metrics)
 
         # Register metrics for the cost value function
         metrics.update(cost_metrics)
 
-        self.register_metrics(
-            module_id,
-            metrics
-        )
+        self.register_metrics(module_id, metrics)
         # Return the total loss.
         return total_loss
 
@@ -232,47 +247,66 @@ class PPOLagrangeTorchLearner(PPOLagrangeLearner, TorchLearner):
 
         # Update Largange coefficient.
         if hps.learn_penalty_coeff:
-            current_lagrange_penalty_data = self.curr_lagrange_penalty_coeffs_per_module[
-                module_id]
+            current_lagrange_penalty_data = (
+                self.curr_lagrange_penalty_coeffs_per_module[module_id]
+            )
             # previous infos
             penalty = current_lagrange_penalty_data[PENALTY]
             i_part = current_lagrange_penalty_data[I_PART]
             smoothed_violation = current_lagrange_penalty_data[SMOOTHED_VIOLATION]
-            # Low pass filter smoothing constraint violation curve 
-            acc_costs = torch.tensor(sampled_lp_values[module_id]).to(device=smoothed_violation.device).mean()
-            mean_constraint_violation = (acc_costs - hps.cost_limit * torch.ones_like(acc_costs).to(device=smoothed_violation.device))            
-            new_smoothed_violation = polyak_update(previous_value=smoothed_violation.data,
-                                           update_value=mean_constraint_violation,
-                                           alpha=hps.polyak_coeff) 
-            # computing the gradient with respect to the penalty      
-            lagrange_grad  = 1 - torch.exp(-penalty.data)
+            # Low pass filter smoothing constraint violation curve
+            acc_costs = (
+                torch.tensor(sampled_lp_values[module_id])
+                .to(device=smoothed_violation.device)
+                .mean()
+            )
+            mean_constraint_violation = acc_costs - hps.cost_limit * torch.ones_like(
+                acc_costs
+            ).to(device=smoothed_violation.device)
+            new_smoothed_violation = polyak_update(
+                previous_value=smoothed_violation.data,
+                update_value=mean_constraint_violation,
+                alpha=hps.polyak_coeff,
+            )
+            # computing the gradient with respect to the penalty
+            lagrange_grad = 1 - torch.exp(-penalty.data)
             # I part
-            i_part.data += (hps.penalty_coeff_lr * new_smoothed_violation) * lagrange_grad
+            i_part.data += (
+                hps.penalty_coeff_lr * new_smoothed_violation
+            ) * lagrange_grad
             # P part computation
             p_part = hps.p_coeff * new_smoothed_violation * lagrange_grad
             # D part computation
-            d_part = hps.d_coeff * (new_smoothed_violation - smoothed_violation.data) * lagrange_grad
+            d_part = (
+                hps.d_coeff
+                * (new_smoothed_violation - smoothed_violation.data)
+                * lagrange_grad
+            )
             # updating penalty coefficient
             raw_penalty = torch.nn.functional.softplus(p_part + i_part + d_part)
             # clipping the maximum possible penalty
-            penalty.data = torch.clip(
-                raw_penalty, max=hps.max_penalty_coeff)
+            penalty.data = torch.clip(raw_penalty, max=hps.max_penalty_coeff)
             # updating smoothed violations
-            smoothed_violation.data = new_smoothed_violation            
-            
+            smoothed_violation.data = new_smoothed_violation
+
             results.update(
-                {LEARNER_RESULTS_CURR_LARGANGE_PENALTY_COEFF_KEY: penalty.item(),
-                 LEARNER_RESULTS_MEAN_CONSTRAINT_VIOL:mean_constraint_violation.item() / hps.cost_limit,
-                 })
-            
+                {
+                    LEARNER_RESULTS_CURR_LARGANGE_PENALTY_COEFF_KEY: penalty.item(),
+                    LEARNER_RESULTS_MEAN_CONST_VIOL: mean_constraint_violation.item()
+                    / hps.cost_limit,
+                }
+            )
+
             if hps.track_debuging_values:
                 results.update(
-                    {SMOOTHED_VIOLATION: new_smoothed_violation.item() / hps.cost_limit,
-                     D_PART: d_part.item(),
-                     I_PART: i_part.item(),
-                     P_PART: p_part.item(),
-                     MEAN_ACCUMULATED_COST: acc_costs.item()
-                    })
+                    {
+                        SMOOTHED_VIOLATION: new_smoothed_violation.item()
+                        / hps.cost_limit,
+                        D_PART: d_part.item(),
+                        I_PART: i_part.item(),
+                        P_PART: p_part.item(),
+                        MEAN_ACCUMULATED_COST: acc_costs.item(),
+                    }
+                )
 
         return results
-

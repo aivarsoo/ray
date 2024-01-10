@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [project]
-name = "rllib_ppo_lagrange"
-authors = [{name = "Anyscale Inc."}]
+name = "rllib_lagrange_ppo"
+authors = [{name = "Aivar Sootla"}]
 version = "0.1.0"
 description = ""
 readme = "README.md"

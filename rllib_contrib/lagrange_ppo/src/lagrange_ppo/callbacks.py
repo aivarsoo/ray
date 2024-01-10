@@ -1,13 +1,14 @@
-from typing import Dict
-from typing import Tuple
+from collections import deque
+from typing import List, Dict
 
-import numpy as np
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from ray.rllib.env import BaseEnv
 from ray.rllib.evaluation import RolloutWorker
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
 from ray.rllib.policy import Policy
-from collections import deque
+
+def mean(array:List) -> float:
+    return sum(array) / float(len(array))
 
 class ComputeEpisodeCostCallback(DefaultCallbacks):
     def on_episode_start(
@@ -47,8 +48,8 @@ class ComputeEpisodeCostCallback(DefaultCallbacks):
         )
         costs = deque([], maxlen=1500)
         for agent in episode.get_agents():
-            costs.append(episode._last_infos[agent]['cost'])
-        episode.user_data["costs"].append(np.mean(costs))
+            costs.append(episode._last_infos[agent]["cost"])
+        episode.user_data["costs"].append(mean(costs))
 
     def on_episode_end(
         self,
@@ -60,7 +61,7 @@ class ComputeEpisodeCostCallback(DefaultCallbacks):
         env_index: int,
         **kwargs
     ):
-        episode_cost = np.sum(episode.user_data["costs"])
+        episode_cost = sum(episode.user_data["costs"])
         episode.custom_metrics["episode_cost"] = episode_cost
         episode.hist_data["costs"] = episode.user_data["costs"]
 
@@ -68,6 +69,6 @@ class ComputeEpisodeCostCallback(DefaultCallbacks):
         result["callback_ok"] = True
 
         cost = result["custom_metrics"].get("episode_cost", 0)
-        result["custom_metrics"]["episode_cost_min"] = np.min(cost)
-        result["custom_metrics"]["episode_cost_max"] = np.max(cost)
-        result["custom_metrics"]["episode_cost_mean"] = np.mean(cost)
+        result["custom_metrics"]["episode_cost_min"] = min(cost)
+        result["custom_metrics"]["episode_cost_max"] = max(cost)
+        result["custom_metrics"]["episode_cost_mean"] = mean(cost)

@@ -1,5 +1,6 @@
 # __sphinx_doc_begin__
 import gymnasium as gym
+
 from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
 from ray.rllib.core.models.base import Model
 from ray.rllib.core.models.configs import MLPHeadConfig
@@ -21,8 +22,8 @@ class PPOLagrangeCatalog(PPOCatalog):
 
     Any custom ActorCriticEncoder can be built by overriding the
     build_actor_critic_encoder() method. Alternatively, the ActorCriticEncoderConfig
-    at PPOLagrangeCatalog.actor_critic_encoder_config can be overridden to build a custom
-    ActorCriticEncoder during RLModule runtime.
+    at PPOLagrangeCatalog.actor_critic_encoder_config can be overridden to build
+    a custom ActorCriticEncoder during RLModule runtime.
 
     Any custom head can be built by overriding the build_pi_head() and build_vf_head()
     methods. Alternatively, the PiHeadConfig and VfHeadConfig can be overridden to
@@ -70,5 +71,6 @@ class PPOLagrangeCatalog(PPOCatalog):
             The cost value function head.
         """
         return self.cvf_head_config.build(framework=framework)
+
 
 # __sphinx_doc_end__
