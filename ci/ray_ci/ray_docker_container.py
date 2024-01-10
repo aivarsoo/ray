@@ -3,7 +3,7 @@ from typing import List
 
 from ci.ray_ci.container import _DOCKER_ECR_REPO
 from ci.ray_ci.docker_container import DockerContainer
-from ci.ray_ci.builder_container import PYTHON_VERSIONS
+from ci.ray_ci.builder_container import PYTHON_VERSIONS, DEFAULT_ARCHITECTURE
 from ci.ray_ci.utils import docker_pull, RAY_VERSION, POSTMERGE_PIPELINE
 
 
@@ -18,24 +18,30 @@ class RayDockerContainer(DockerContainer):
         """
         assert "RAYCI_BUILD_ID" in os.environ, "RAYCI_BUILD_ID not set"
         rayci_build_id = os.environ["RAYCI_BUILD_ID"]
+        if self.architecture == DEFAULT_ARCHITECTURE:
+            suffix = "base"
+        else:
+            suffix = f"base-{self.architecture}"
 
         base_image = (
             f"{_DOCKER_ECR_REPO}:{rayci_build_id}"
-            f"-{self.image_type}{self.python_version}{self.platform}base"
+            f"-{self.image_type}-py{self.python_version}-{self.platform}-{suffix}"
         )
+
         docker_pull(base_image)
 
         bin_path = PYTHON_VERSIONS[self.python_version]["bin_path"]
-        wheel_name = f"ray-{RAY_VERSION}-{bin_path}-manylinux2014_x86_64.whl"
-
+        wheel_name = (
+            f"ray-{RAY_VERSION}-{bin_path}-manylinux2014_{self.architecture}.whl"
+        )
         constraints_file = "requirements_compiled.txt"
-        if self.python_version == "py37":
-            constraints_file = "requirements_compiled_py37.txt"
+        tag = self._get_canonical_tag()
+        ray_image = f"rayproject/{self.image_type}:{tag}"
+        pip_freeze = f"{self.image_type}:{tag}_pip-freeze.txt"
 
-        ray_image = f"rayproject/{self.image_type}:{self._get_canonical_tag()}"
         cmds = [
             "./ci/build/build-ray-docker.sh "
-            f"{wheel_name} {base_image} {constraints_file} {ray_image}"
+            f"{wheel_name} {base_image} {constraints_file} {ray_image} {pip_freeze}"
         ]
         if self._should_upload():
             cmds += [
@@ -50,7 +56,10 @@ class RayDockerContainer(DockerContainer):
         self.run_script(cmds)
 
     def _should_upload(self) -> bool:
-        return os.environ.get("BUILDKITE_PIPELINE_ID") == POSTMERGE_PIPELINE
+        return (
+            os.environ.get("BUILDKITE_PIPELINE_ID") == POSTMERGE_PIPELINE
+            and self.upload
+        )
 
     def _get_image_names(self) -> List[str]:
         ray_repo = f"rayproject/{self.image_type}"

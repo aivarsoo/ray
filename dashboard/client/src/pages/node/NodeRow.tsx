@@ -18,6 +18,7 @@ import { NodeLink } from "../../common/links";
 import {
   CpuProfilingLink,
   CpuStackTraceLink,
+  MemoryProfilingButton,
 } from "../../common/ProfilingLink";
 import rowStyles from "../../common/RowStyles";
 import PercentageBar from "../../components/PercentageBar";
@@ -72,6 +73,9 @@ const useStyles = makeStyles((theme) =>
     logicalResources: {
       maxWidth: 200,
     },
+    labels: {
+      maxWidth: 200,
+    },
   }),
 );
 
@@ -92,7 +96,6 @@ export const NodeRow = ({
     disk,
     networkSpeed = [0, 0],
     raylet,
-    logUrl,
     logicalResources,
   } = node;
 
@@ -142,7 +145,7 @@ export const NodeRow = ({
       <TableCell>
         {raylet.state !== "DEAD" && (
           <Link
-            to={`/logs/${encodeURIComponent(logUrl)}`}
+            to={`/logs/?nodeId=${encodeURIComponent(raylet.nodeId)}`}
             style={{ textDecoration: "none" }}
           >
             Log
@@ -206,6 +209,13 @@ export const NodeRow = ({
           "-"
         )}
       </TableCell>
+      <TableCell align="center">
+        <CodeDialogButtonWithPreview
+          className={classes.labels}
+          title="Labels"
+          code={raylet.labels}
+        />
+      </TableCell>
     </TableRow>
   );
 };
@@ -227,7 +237,11 @@ type WorkerRowProps = {
 export const WorkerRow = ({ node, worker }: WorkerRowProps) => {
   const classes = rowStyles();
 
-  const { ip, mem, logUrl } = node;
+  const {
+    ip,
+    mem,
+    raylet: { nodeId },
+  } = node;
   const {
     pid,
     cpuPercent: cpu = 0,
@@ -238,8 +252,8 @@ export const WorkerRow = ({ node, worker }: WorkerRowProps) => {
 
   const coreWorker = coreWorkerStats.length ? coreWorkerStats[0] : undefined;
   const workerLogUrl =
-    `/logs/${encodeURIComponent(logUrl)}` +
-    (coreWorker ? `?fileName=${coreWorker.workerId}` : "");
+    `/logs/?nodeId=${encodeURIComponent(nodeId)}` +
+    (coreWorker ? `&fileName=${coreWorker.workerId}` : "");
 
   return (
     <TableRow>
@@ -267,10 +281,11 @@ export const WorkerRow = ({ node, worker }: WorkerRowProps) => {
           Log
         </Link>
         <br />
-        <CpuStackTraceLink pid={pid} ip={ip} type="" />
-        <br />
         <CpuProfilingLink pid={pid} ip={ip} type="" />
         <br />
+        <CpuStackTraceLink pid={pid} ip={ip} type="" />
+        <br />
+        <MemoryProfilingButton pid={pid} ip={ip} />
       </TableCell>
       <TableCell>
         <PercentageBar num={Number(cpu)} total={100}>
@@ -294,6 +309,7 @@ export const WorkerRow = ({ node, worker }: WorkerRowProps) => {
       </TableCell>
       <TableCell>N/A</TableCell>
       <TableCell>N/A</TableCell>
+      <TableCell align="center">N/A</TableCell>
       <TableCell align="center">N/A</TableCell>
       <TableCell align="center">N/A</TableCell>
       <TableCell align="center">N/A</TableCell>

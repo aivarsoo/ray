@@ -140,6 +140,15 @@ MongoDB
    read_mongo
    Dataset.write_mongo
 
+BigQuery
+--------
+
+.. autosummary::
+   :toctree: doc/
+
+   read_bigquery
+   Dataset.write_bigquery
+
 SQL Databases
 -------------
 
@@ -148,6 +157,16 @@ SQL Databases
    :toctree: doc/
 
    read_sql
+   Dataset.write_sql
+
+Databricks
+----------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc/
+
+   read_databricks_tables
 
 Dask
 ----
@@ -235,10 +254,22 @@ Datasource API
    :toctree: doc/
 
    read_datasource
-   Dataset.write_datasource
    Datasource
    ReadTask
-   datasource.Reader
+   datasource.FilenameProvider
+
+Datasink API
+------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: doc/
+
+   Dataset.write_datasink
+   Datasink
+   datasource.RowBasedFileDatasink
+   datasource.BlockBasedFileDatasink
+   datasource.FileBasedDatasource
 
 Partitioning API
 ----------------
@@ -251,7 +282,6 @@ Partitioning API
    datasource.PartitionStyle
    datasource.PathPartitionParser
    datasource.PathPartitionFilter
-   datasource.FileExtensionFilter
 
 .. _metadata_provider:
 
@@ -269,16 +299,4 @@ MetadataProvider API
    datasource.DefaultParquetMetadataProvider
    datasource.FastFileMetadataProvider
 
-
-.. _block_write_path_provider:
-
-BlockWritePathProvider API
---------------------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: doc/
-
-   datasource.BlockWritePathProvider
-   datasource.DefaultBlockWritePathProvider
    

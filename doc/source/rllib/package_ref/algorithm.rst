@@ -50,10 +50,19 @@ Public methods
     :nosignatures:
     :toctree: doc/
 
-    ~AlgorithmConfig.build
-    ~AlgorithmConfig.freeze
     ~AlgorithmConfig.copy
     ~AlgorithmConfig.validate
+    ~AlgorithmConfig.freeze
+
+Builder methods
+~~~~~~~~~~~~~~~
+.. autosummary::
+    :nosignatures:
+    :toctree: doc/
+
+    ~AlgorithmConfig.build
+    ~AlgorithmConfig.build_learner_group
+    ~AlgorithmConfig.build_learner
 
 Configuration methods
 ~~~~~~~~~~~~~~~~~~~~~
@@ -163,11 +172,9 @@ Saving and Restoring
     ~Algorithm.export_policy_model
     ~Algorithm.import_policy_model_from_h5
     ~Algorithm.restore
-    ~Algorithm.restore_from_object
     ~Algorithm.restore_workers
     ~Algorithm.save
     ~Algorithm.save_checkpoint
-    ~Algorithm.save_to_object
 
 
 Training

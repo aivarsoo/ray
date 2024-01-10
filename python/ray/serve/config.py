@@ -3,8 +3,8 @@ import warnings
 from enum import Enum
 from typing import Any, Callable, List, Optional, Union
 
-import pydantic
-from pydantic import (
+from ray import cloudpickle
+from ray._private.pydantic_compat import (
     BaseModel,
     NonNegativeFloat,
     NonNegativeInt,
@@ -12,9 +12,9 @@ from pydantic import (
     PositiveInt,
     validator,
 )
-
 from ray._private.utils import import_attr
 from ray.serve._private.constants import (
+    DEFAULT_AUTOSCALING_POLICY,
     DEFAULT_GRPC_PORT,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,
@@ -28,6 +28,8 @@ logger = logging.getLogger(SERVE_LOGGER_NAME)
 
 @PublicAPI(stability="stable")
 class AutoscalingConfig(BaseModel):
+    """Config for the Serve Autoscaler."""
+
     # Please keep these options in sync with those in
     # `src/ray/protobuf/serve.proto`.
 
@@ -60,6 +62,12 @@ class AutoscalingConfig(BaseModel):
     # How long to wait before scaling up replicas
     upscale_delay_s: NonNegativeFloat = 30.0
 
+    # Cloudpickled policy definition.
+    serialized_policy_def: bytes = b""
+
+    # Custom autoscaling config. Defaults to the request-based autoscaler.
+    policy: Union[str, Callable] = DEFAULT_AUTOSCALING_POLICY
+
     @validator("max_replicas", always=True)
     def replicas_settings_valid(cls, max_replicas, values):
         min_replicas = values.get("min_replicas")
@@ -84,6 +92,24 @@ class AutoscalingConfig(BaseModel):
 
         return max_replicas
 
+    @validator("policy", always=True)
+    def serialize_policy(cls, policy, values) -> Callable:
+        """Serialize policy with cloudpickle.
+
+        Import the policy if it's passed in as a string import path. Then cloudpickle
+        the policy and set `serialized_policy_def` if it's empty.
+        """
+        if isinstance(policy, str):
+            policy = import_attr(policy)
+
+        if not values.get("serialized_policy_def"):
+            values["serialized_policy_def"] = cloudpickle.dumps(policy)
+        return policy
+
+    def get_policy(self) -> Callable:
+        """Deserialize policy from cloudpickled bytes."""
+        return cloudpickle.loads(self.serialized_policy_def)
+
     def get_upscale_smoothing_factor(self) -> PositiveFloat:
         return self.upscale_smoothing_factor or self.smoothing_factor
 
@@ -104,7 +130,6 @@ class DeploymentMode(str, Enum):
     NoServer = "NoServer"
     HeadOnly = "HeadOnly"
     EveryNode = "EveryNode"
-    FixedNumber = "FixedNumber"
 
 
 @PublicAPI(stability="stable")
@@ -139,7 +164,7 @@ class ProxyLocation(str, Enum):
 
 
 @PublicAPI(stability="stable")
-class HTTPOptions(pydantic.BaseModel):
+class HTTPOptions(BaseModel):
     """HTTP options for the proxies. Supported fields:
 
     - host: Host that the proxies listens for HTTP on. Defaults to
@@ -173,8 +198,6 @@ class HTTPOptions(pydantic.BaseModel):
     num_cpus: int = 0
     root_url: str = ""
     root_path: str = ""
-    fixed_number_replicas: Optional[int] = None
-    fixed_number_selection_seed: int = 0
     request_timeout_s: Optional[float] = None
     keep_alive_timeout_s: int = DEFAULT_UVICORN_KEEP_ALIVE_TIMEOUT_S
 
@@ -182,12 +205,6 @@ class HTTPOptions(pydantic.BaseModel):
     def location_backfill_no_server(cls, v, values):
         if values["host"] is None or v is None:
             return DeploymentMode.NoServer
-
-        if v == DeploymentMode.FixedNumber:
-            warnings.warn(
-                "`DeploymentMode.FixedNumber` is deprecated and will be removed in a "
-                "future version."
-            )
 
         return v
 
@@ -208,15 +225,6 @@ class HTTPOptions(pydantic.BaseModel):
             warnings.warn(
                 "Passing `num_cpus` to HTTPOptions is deprecated and will be "
                 "removed in a future version."
-            )
-        return v
-
-    @validator("fixed_number_replicas", always=True)
-    def fixed_number_replicas_should_exist(cls, v, values):
-        if values.get("location") == DeploymentMode.FixedNumber and v is None:
-            raise ValueError(
-                "When location='FixedNumber', you must specify "
-                "the `fixed_number_replicas` parameter."
             )
         return v
 

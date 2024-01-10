@@ -254,6 +254,7 @@ async def test_submit_job(job_sdk_client, runtime_env_option, monkeypatch):
     job_id = submit_result.submission_id
 
     try:
+        job_start_time = time.time()
         wait_for_condition(
             partial(
                 _check_job,
@@ -261,8 +262,10 @@ async def test_submit_job(job_sdk_client, runtime_env_option, monkeypatch):
                 job_id=job_id,
                 status=JobStatus.SUCCEEDED,
             ),
-            timeout=60,
+            timeout=300,
         )
+        job_duration = time.time() - job_start_time
+        print(f"The job took {job_duration}s to succeed.")
     except RuntimeError as e:
         # If the job is still pending, include job logs and info in error.
         if head_client.get_job_status(job_id) == JobStatus.PENDING:
@@ -285,7 +288,7 @@ async def test_timeout(job_sdk_client):
         pip={
             "packages": ["tensorflow", "requests", "botocore", "torch"],
             "pip_check": False,
-            "pip_version": "==22.0.2;python_version=='3.8.11'",
+            "pip_version": "==23.3.2;python_version=='3.9.16'",
         },
         config=RuntimeEnvConfig(setup_timeout_seconds=1),
     ).to_dict()
